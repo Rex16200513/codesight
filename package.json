@@ -1,0 +1,22 @@
+{
+  "name": "glassbox-hud",
+  "version": "0.1.0",
+  "private": true,
+  "description": "X-Ray Diagnostic HUD for Vibe Coding — turn raw AI errors & diffs into visual information-design cards",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "gb": "node --experimental-strip-types packages/cli/src/cli.ts",
+    "dev": "npm run dev --workspace=@glassbox/hud",
+    "dev:sidecar": "npm run dev --workspace=@glassbox/sidecar",
+    "dev:all": "node scripts/dev-all.mjs",
+    "build": "npm run build --workspace=@glassbox/core && npm run build --workspace=@glassbox/cli && npm run build --workspace=@glassbox/sidecar && npm run build --workspace=@glassbox/hud",
+    "typecheck": "npm run typecheck --workspace=@glassbox/core && npm run typecheck --workspace=@glassbox/cli && npm run typecheck --workspace=@glassbox/ui && npm run typecheck --workspace=@glassbox/sidecar && npm run typecheck --workspace=@glassbox/hud",
+    "test": "npm run test --workspace=@glassbox/core"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

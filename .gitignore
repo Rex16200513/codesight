@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Local GlassBox incremental index cache
+.glassbox/
+
+# OS / Editor
+.DS_Store
+*.log
+.env
+.env.*
