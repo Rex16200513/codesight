@@ -1,28 +1,28 @@
 # GlassBox — Code Comprehension & X-Ray Engine for Vibe Coding
 
-> Stop blindly reading raw stack traces or huge AI diffs. Understand **what every file does**, **what actually broke (and its exact blast radius)**, and **which architectural direction to tell your AI** — at near-zero token cost.
+> **Graph-RAG helps AI read your code. GlassBox helps *you* understand what AI changed, what broke, and which direction to fix in 3 seconds.**
 
-## Core Methodology (3-Layer Cognitive Compression)
+## Standing on Open-Source Graph-RAG (`v0.2.0`)
 
-1. **Incremental Repo Map (`map`)**: SHA-256 cached file scanning + real dependency graph resolution (relative imports & monorepo workspaces) + 0-Token human-readable role cards.
-2. **Hybrid Graph + Embedding Retrieval (`ask`)**: Combines exact symbol matching, bilingual local/BYOK semantic vectors, and 1-hop dependency graph propagation to compress whole-repo context by ~97% in milliseconds.
-3. **Problem Projection & Decision Framing (`diagnose`)**: Projects real errors or `git diff` onto the live dependency graph, revealing direct/indirect **Blast Radius**, unaffected **Safe Zones**, silent regressions (removed guards, swallowed errors, `as any`), and graph-informed **AI Fix Directions**.
+GlassBox uses a pluggable **`GraphProvider`** architecture so you never get locked into heavy infrastructure:
 
-## Modular Architecture (Low Upgrade & Migration Cost)
+1. **Default Zero-Docker Built-in GraphRAG (`BuiltInAstGraphProvider`)**:
+   - **Real TypeScript Compiler AST** (`astParser.ts`): extracts exact imports, exports, and **cross-file Function/Component Call Graphs** (zero regex false positives).
+   - **Incremental SHA-256 Cache** (`.glassbox/index.json`): unchanged files re-index in ~2ms with 0 extra tokens.
+   - **Hybrid GraphRAG Retrieval (RRF)**: fuses **Exact Seed Match + Okapi BM25 + Semantic Vector + Graph 1-hop Propagation** via Reciprocal Rank Fusion.
+2. **Pluggable External Open-Source Graph-RAG MCP (`McpEnrichedGraphProvider`)**:
+   - Connects over standard MCP JSON-RPC 2.0 (`stdio`) to external MIT Graph-RAG servers such as **`CodeGraphContext` (`cgc mcp start`)**, **`vitali87/code-graph-rag`**, **`sdsrss/code-graph-mcp`**, or **`Serena`**, translating their machine-level graphs into GlassBox's human comprehension & decision layer.
+
+## Modular Architecture
 
 ```text
 packages/core     # @glassbox/core (browser-safe schema/static analyzer)
-                  # @glassbox/core/engine (Node incremental indexer, codeGraph, embeddingIndex, comprehensionEngine)
-packages/cli      # @glassbox/cli — `glassbox map | ask | diagnose [--json]`
+                  # @glassbox/core/engine (AST parser, call graph, BM25+Vector RRF, GraphProvider & MCP bridge)
+packages/cli      # @glassbox/cli — `map | ask | trace | diagnose [--mcp-cmd "..."] [--json]`
 packages/sidecar  # @glassbox/sidecar — local HTTP/SSE live bridge + MCP Apps (ui://) adapter
-packages/ui       # @glassbox/ui — host-portable floating HUD React components (Claude/ChatGPT aesthetic)
+packages/ui       # @glassbox/ui — host-portable floating HUD React components
 apps/hud          # @glassbox/hud — standalone browser HUD preview shell
 ```
-
-Because every command outputs clean structured JSON (`--json`) and `@glassbox/core/engine` is decoupled from any UI shell, the exact same engine can power:
-- A native macOS Always-on-Top floating HUD (Tauri / Electron / SwiftUI)
-- IDE / Agent Webviews (Codex, Orca, Cursor, VS Code)
-- MCP Apps (`io.modelcontextprotocol/ui`)
 
 ## Quick Start
 
@@ -32,13 +32,19 @@ npm install
 # 1. Build a 10-second human comprehension map of any local repo
 npm run gb -- map /path/to/your/project
 
-# 2. Ask in Chinese or English where logic lives & what depends on it
+# 2. Ask in Chinese or English via BM25 + Vector + Graph RRF
 npm run gb -- ask "修复提示词 prompt 是怎么拼装出来的"
 
-# 3. Project an error or git diff onto the real dependency graph
-npm run gb -- diagnose --error "packages/core/src/schema.ts(104,3): error TS2322: Type 'string' is not assignable to type 'number'."
+# 3. Trace cross-file callers & callees of any function or React component
+npm run gb -- trace buildSurgicalFixPrompt
+
+# 4. Project an error or git diff onto the dependency & call graph
+npm run gb -- diagnose --error "packages/core/src/promptBuilder.ts(55,4): TypeError: Cannot read properties of undefined (reading 'label')"
 npm run gb -- diagnose --git /path/to/your/project
 
-# 4. Run unit tests & build all workspaces
+# Optional: Enrich with an external open-source Graph-RAG MCP server
+npm run gb -- diagnose --mcp-cmd "cgc mcp start" --error "..."
+
+# Run typecheck, unit tests & build
 npm run typecheck && npm test && npm run build
 ```

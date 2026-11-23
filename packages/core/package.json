@@ -1,6 +1,6 @@
 {
   "name": "@glassbox/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,10 +17,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --experimental-strip-types --test src/staticAnalyzer.test.ts src/comprehensionEngine.test.ts"
+    "test": "node --experimental-strip-types --test src/staticAnalyzer.test.ts src/comprehensionEngine.test.ts src/graphRag.test.ts"
+  },
+  "dependencies": {
+    "typescript": "^5.8.2"
   },
   "devDependencies": {
-    "@types/node": "^22.15.0",
-    "typescript": "^5.8.2"
+    "@types/node": "^22.15.0"
   }
 }

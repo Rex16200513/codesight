@@ -1,0 +1,75 @@
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import test from 'node:test';
+import {
+  BuiltInAstGraphProvider,
+  McpEnrichedGraphProvider,
+  generateRepoMap,
+  projectProblemOntoRepo,
+  traceSymbol,
+} from './engine.ts';
+
+const REPO_ROOT = path.resolve(import.meta.dirname, '../../..');
+
+test('TypeScript AST parser eliminates string-literal false exports in scenarios.ts', async () => {
+  const { index } = await generateRepoMap(REPO_ROOT, { persistCache: false });
+  const scenariosNode = index.files['packages/core/src/scenarios.ts'];
+  assert.ok(scenariosNode);
+  assert.equal(scenariosNode.parserUsed, 'typescript-ast');
+  assert.deepEqual(scenariosNode.exports, ['DEMO_SCENARIOS']);
+  assert.ok(!scenariosNode.exports.includes('calculateLoyaltyPoints'));
+});
+
+test('AST Call Graph traces cross-file callers of buildSurgicalFixPrompt', async () => {
+  const trace = await traceSymbol(REPO_ROOT, 'buildSurgicalFixPrompt');
+  assert.ok(trace.matches.length >= 1);
+  const match = trace.matches.find((m) => m.symbol.file.endsWith('promptBuilder.ts'));
+  assert.ok(match);
+  assert.ok(
+    match.calledBy.some((e) => e.callerFile.endsWith('GlassBoxHUD.tsx')),
+    `Expected GlassBoxHUD.tsx to call buildSurgicalFixPrompt, got: ${JSON.stringify(match.calledBy)}`
+  );
+});
+
+test('McpEnrichedGraphProvider connects to an external stdio MCP Graph-RAG server cleanly', async () => {
+  // Spawn a minimal in-line Node JSON-RPC 2.0 MCP server simulating CodeGraphContext / code-graph-rag
+  const mockMcpScript = `
+    process.stdin.setEncoding('utf8');
+    let buf = '';
+    process.stdin.on('data', (c) => {
+      buf += c;
+      for (const line of buf.split('\\n')) {
+        if (!line.trim()) continue;
+        const msg = JSON.parse(line);
+        if (msg.method === 'initialize') {
+          process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2024-11-05', capabilities: { tools: {} } } }) + '\\n');
+        } else if (msg.method === 'tools/list') {
+          process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'query_code_graph' }] } }) + '\\n');
+        } else if (msg.method === 'tools/call') {
+          process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text: 'External Graph-RAG: callers include packages/ui/src/components/GlassBoxHUD.tsx' }] } }) + '\\n');
+        }
+      }
+      buf = '';
+    });
+  `;
+
+  const provider = new McpEnrichedGraphProvider(new BuiltInAstGraphProvider(), {
+    command: process.execPath,
+    args: ['-e', mockMcpScript],
+  });
+
+  const report = await projectProblemOntoRepo(
+    REPO_ROOT,
+    {
+      rawError: `packages/core/src/promptBuilder.ts(55,4): TypeError: Cannot read properties of undefined (reading 'label')`,
+    },
+    { provider }
+  );
+
+  assert.ok(report.externalGraphHint);
+  assert.equal(report.externalGraphHint?.toolUsed, 'query_code_graph');
+  assert.ok(
+    report.externalGraphHint?.relatedFiles.includes('packages/ui/src/components/GlassBoxHUD.tsx')
+  );
+  assert.equal(report.primaryTarget?.symbol?.name, 'buildSurgicalFixPrompt');
+});

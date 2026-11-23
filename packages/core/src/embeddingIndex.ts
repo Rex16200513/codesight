@@ -10,7 +10,9 @@ export interface EmbeddingProviderConfig {
 
 export interface RetrievalHit {
   file: IndexedFileNode;
+  /** Reciprocal Rank Fusion (RRF) combined score */
   totalScore: number;
+  bm25Score: number;
   vectorScore: number;
   graphBoost: number;
   exactBoost: number;
@@ -18,11 +20,11 @@ export interface RetrievalHit {
 }
 
 const VECTOR_DIM = 192;
+const RRF_K = 60;
 
 /**
- * Lightweight bilingual code-concept expansion so Chinese natural language queries
- * (e.g. "报错解析在哪", "悬浮窗样式", "提示词怎么拼的") immediately hit English code identifiers
- * even in 0-cost offline local embedding mode!
+ * Bilingual code-domain concept map so Chinese queries immediately align with English code tokens
+ * even in 0-cost offline mode.
  */
 const BILINGUAL_CONCEPTS: Array<[RegExp, string[]]> = [
   [/报错|错误|异常|栈|崩溃|error|stack|trace|crash|bug/i, ['error', 'diagnostic', 'analyzer', 'ripple', 'regression', 'stack']],
@@ -32,12 +34,12 @@ const BILINGUAL_CONCEPTS: Array<[RegExp, string[]]> = [
   [/样式|颜色|主题|暗黑|浅色|css|style/i, ['css', 'style', 'theme', 'light', 'dark', 'glassbox']],
   [/服务|接口|网关|监听|推送|server|sidecar|sse|http/i, ['server', 'sidecar', 'http', 'sse', 'ingest', 'bridge']],
   [/协议|结构|类型|契约|schema|type|mcp/i, ['schema', 'mcp', 'bridge', 'bundle', 'type', 'contract']],
-  [/图|依赖|索引|检索|向量|graph|embed|index|search/i, ['graph', 'index', 'embedding', 'retrieval', 'blast', 'repo']],
+  [/图|依赖|索引|检索|向量|调用|ast|graph|embed|index|search|call/i, ['graph', 'index', 'embedding', 'retrieval', 'blast', 'repo', 'ast', 'symbol', 'call']],
   [/测试|单测|test|assert/i, ['test', 'spec', 'assert', 'analyzer']],
   [/鉴权|权限|登录|安全|auth|guard|admin/i, ['auth', 'guard', 'regression', 'security', 'silent']],
 ];
 
-function tokenizeForEmbedding(text: string): string[] {
+export function tokenizeForSearch(text: string): string[] {
   const expanded: string[] = [];
   for (const [regex, concepts] of BILINGUAL_CONCEPTS) {
     if (regex.test(text)) {
@@ -51,7 +53,6 @@ function tokenizeForEmbedding(text: string): string[] {
     .split(/[^a-z0-9\u4e00-\u9fa5]+/)
     .filter((t) => t.length >= 2);
 
-  // Add character bigrams for Chinese phrases to improve fuzzy recall
   const cjkBigrams: string[] = [];
   for (const t of baseTokens) {
     if (/^[\u4e00-\u9fa5]+$/.test(t) && t.length >= 2) {
@@ -74,21 +75,16 @@ function fnv1aHash(str: string): number {
 }
 
 /**
- * 0-Cost Deterministic Local Semantic Embedding (Signed Random Projection / Feature Hashing).
- * Produces L2-normalized 192-d vectors in < 0.1ms per file, zero network, zero model downloads.
+ * 0-Cost Deterministic Local Semantic Embedding (Signed Feature Hashing, 192-d L2 normalized).
  */
 export function computeLocalEmbedding(text: string): number[] {
   const vec = new Array<number>(VECTOR_DIM).fill(0);
-  const tokens = tokenizeForEmbedding(text);
+  const tokens = tokenizeForSearch(text);
   for (const tok of tokens) {
     const h1 = fnv1aHash(tok);
     const h2 = fnv1aHash(`${tok}#2`);
-    const idx1 = h1 % VECTOR_DIM;
-    const sign1 = (h1 & 1) === 0 ? 1 : -1;
-    const idx2 = h2 % VECTOR_DIM;
-    const sign2 = (h2 & 1) === 0 ? 0.5 : -0.5;
-    vec[idx1] += sign1;
-    vec[idx2] += sign2;
+    vec[h1 % VECTOR_DIM] += (h1 & 1) === 0 ? 1 : -1;
+    vec[h2 % VECTOR_DIM] += (h2 & 1) === 0 ? 0.5 : -0.5;
   }
 
   let normSq = 0;
@@ -114,18 +110,66 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 export function buildFileEmbeddingText(node: IndexedFileNode): string {
-  return [
-    node.path,
-    node.roleLabel,
-    node.summary,
-    node.exports.join(' '),
-    node.keywords.join(' '),
-  ].join('\n');
+  const symText = (node.symbols ?? [])
+    .slice(0, 12)
+    .map((s) => `${s.name} ${s.doc ?? ''}`)
+    .join(' ');
+  return [node.path, node.roleLabel, node.summary, node.exports.join(' '), symText, node.keywords.join(' ')].join(
+    '\n'
+  );
 }
 
 /**
- * Optional external OpenAI-compatible dense embedding call (e.g. text-embedding-3-small / Ollama nomic-embed-text).
+ * Standard Okapi BM25 lexical scoring over indexed file corpus (k1=1.5, b=0.75).
  */
+function computeBM25Scores(nodes: IndexedFileNode[], query: string): Map<string, number> {
+  const queryTerms = Array.from(new Set(tokenizeForSearch(query)));
+  const scores = new Map<string, number>();
+  if (queryTerms.length === 0 || nodes.length === 0) return scores;
+
+  const docTermFreqs = new Map<string, Map<string, number>>();
+  const docLengths = new Map<string, number>();
+  const docFreq = new Map<string, number>();
+  let totalLen = 0;
+
+  for (const node of nodes) {
+    const tokens = tokenizeForSearch(buildFileEmbeddingText(node));
+    const tf = new Map<string, number>();
+    for (const t of tokens) {
+      tf.set(t, (tf.get(t) ?? 0) + 1);
+    }
+    docTermFreqs.set(node.path, tf);
+    docLengths.set(node.path, tokens.length);
+    totalLen += tokens.length;
+
+    for (const uniqueTerm of tf.keys()) {
+      docFreq.set(uniqueTerm, (docFreq.get(uniqueTerm) ?? 0) + 1);
+    }
+  }
+
+  const N = nodes.length;
+  const avgdl = totalLen / N || 1;
+  const k1 = 1.5;
+  const b = 0.75;
+
+  for (const node of nodes) {
+    const tfMap = docTermFreqs.get(node.path)!;
+    const dl = docLengths.get(node.path) ?? 1;
+    let score = 0;
+
+    for (const term of queryTerms) {
+      const tf = tfMap.get(term) ?? 0;
+      if (tf === 0) continue;
+      const df = docFreq.get(term) ?? 0;
+      const idf = Math.log(1 + (N - df + 0.5) / (df + 0.5));
+      score += idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + (b * dl) / avgdl)));
+    }
+    scores.set(node.path, score);
+  }
+
+  return scores;
+}
+
 async function fetchExternalEmbeddings(
   texts: string[],
   config: EmbeddingProviderConfig
@@ -140,10 +184,7 @@ async function fetchExternalEmbeddings(
     body: JSON.stringify({ model: config.model, input: texts }),
   });
 
-  if (!res.ok) {
-    throw new Error(`Embedding API failed (${res.status})`);
-  }
-
+  if (!res.ok) throw new Error(`Embedding API failed (${res.status})`);
   const data = (await res.json()) as { data?: Array<{ embedding: number[] }> };
   if (!data.data || data.data.length !== texts.length) {
     throw new Error('Unexpected embedding response shape');
@@ -151,55 +192,48 @@ async function fetchExternalEmbeddings(
   return data.data.map((d) => d.embedding);
 }
 
-/**
- * Ensures every file node in RepoIndex has an up-to-date embedding vector.
- * Uses incremental caching: unchanged files keep their cached vectors!
- */
 export async function ensureEmbeddings(
   index: RepoIndex,
   config?: EmbeddingProviderConfig
-): Promise<{ mode: 'local-hash-vector' | 'external-dense-vector'; embeddedNow: number }> {
+): Promise<{ mode: 'local-bm25+vector-rrf' | 'external-dense+bm25-rrf'; embeddedNow: number }> {
   const nodes = Object.values(index.files);
 
   if (config?.enabled && config.baseUrl && config.model) {
-    const stale = nodes.filter(
-      (n) => !n.embedding || n.embeddingModel !== config.model
-    );
+    const stale = nodes.filter((n) => !n.embedding || n.embeddingModel !== config.model);
     if (stale.length > 0) {
       try {
-        const vectors = await fetchExternalEmbeddings(
-          stale.map(buildFileEmbeddingText),
-          config
-        );
+        const vectors = await fetchExternalEmbeddings(stale.map(buildFileEmbeddingText), config);
         stale.forEach((n, i) => {
           n.embedding = vectors[i];
           n.embeddingModel = config.model;
         });
-        return { mode: 'external-dense-vector', embeddedNow: stale.length };
+        return { mode: 'external-dense+bm25-rrf', embeddedNow: stale.length };
       } catch {
-        // Fallback smoothly to local 0-cost embedding
+        // Fallback cleanly to local vector
       }
     } else {
-      return { mode: 'external-dense-vector', embeddedNow: 0 };
+      return { mode: 'external-dense+bm25-rrf', embeddedNow: 0 };
     }
   }
 
   let embeddedNow = 0;
   for (const node of nodes) {
-    if (!node.embedding || node.embeddingModel !== 'local-192d') {
+    if (!node.embedding || node.embeddingModel !== 'local-192d-v2') {
       node.embedding = computeLocalEmbedding(buildFileEmbeddingText(node));
-      node.embeddingModel = 'local-192d';
+      node.embeddingModel = 'local-192d-v2';
       embeddedNow++;
     }
   }
-  return { mode: 'local-hash-vector', embeddedNow };
+  return { mode: 'local-bm25+vector-rrf', embeddedNow };
 }
 
 /**
- * Hybrid Graph + Embedding Retrieval:
- * 1. Exact filename / exported symbol hits (highest precision)
- * 2. Embedding cosine similarity (semantic recall across CN/EN descriptions & identifiers)
- * 3. Graph 1-hop neighborhood propagation + hub centrality boost (captures causal callers & shared contracts!)
+ * Industry-Standard Hybrid GraphRAG Retrieval via Reciprocal Rank Fusion (RRF):
+ * Fuses 4 independent rankings:
+ * 1. Exact Seed / Symbol / Filename matches
+ * 2. Okapi BM25 lexical ranking
+ * 3. Cosine Semantic Vector ranking (local or external dense embeddings)
+ * 4. Graph 1-hop neighborhood propagation (with barrel damping)
  */
 export async function hybridRetrieve(
   index: RepoIndex,
@@ -213,10 +247,11 @@ export async function hybridRetrieve(
 ): Promise<RetrievalHit[]> {
   const topK = options?.topK ?? 5;
   const seedFiles = new Set(options?.seedFiles ?? []);
+  const nodes = Object.values(index.files);
   const embedMeta = await ensureEmbeddings(index, options?.embeddingConfig);
 
   let queryVec: number[];
-  if (embedMeta.mode === 'external-dense-vector' && options?.embeddingConfig) {
+  if (embedMeta.mode === 'external-dense+bm25-rrf' && options?.embeddingConfig) {
     try {
       const [v] = await fetchExternalEmbeddings([query], options.embeddingConfig);
       queryVec = v;
@@ -227,90 +262,127 @@ export async function hybridRetrieve(
     queryVec = computeLocalEmbedding(query);
   }
 
+  const bm25Scores = computeBM25Scores(nodes, query);
+  const vectorScores = new Map<string, number>();
+  const exactScores = new Map<string, number>();
+  const reasonsMap = new Map<string, string[]>();
   const queryLower = query.toLowerCase();
-  const baseScores = new Map<
-    string,
-    { vectorScore: number; exactBoost: number; reasons: string[] }
-  >();
 
-  for (const node of Object.values(index.files)) {
-    const vecSim = node.embedding ? Math.max(0, cosineSimilarity(queryVec, node.embedding)) : 0;
-    let exactBoost = 0;
+  for (const node of nodes) {
     const reasons: string[] = [];
+    const vecSim = node.embedding ? Math.max(0, cosineSimilarity(queryVec, node.embedding)) : 0;
+    vectorScores.set(node.path, vecSim);
 
+    let exact = 0;
     if (seedFiles.has(node.path)) {
-      exactBoost += 1.0;
+      exact += 2.0;
       reasons.push('报错/变更直接命中该文件');
-    } else if (queryLower.includes(node.name.toLowerCase()) || queryLower.includes(node.path.toLowerCase())) {
-      exactBoost += 0.75;
+    } else if (
+      queryLower.includes(node.name.toLowerCase()) ||
+      queryLower.includes(node.path.toLowerCase())
+    ) {
+      exact += 1.4;
       reasons.push('文件名精确命中');
     }
 
-    const matchedExports = node.exports.filter(
-      (exp) => exp.length >= 3 && queryLower.includes(exp.toLowerCase())
-    );
-    if (matchedExports.length > 0) {
-      exactBoost += 0.55;
-      reasons.push(`命中导出符号 ${matchedExports.slice(0, 2).join(', ')}`);
+    const matchedSymbols = (node.symbols ?? [])
+      .map((s) => s.name)
+      .filter((name) => name.length >= 3 && queryLower.includes(name.toLowerCase()));
+    if (matchedSymbols.length > 0) {
+      exact += 1.2;
+      reasons.push(`精确命中 AST 符号 ${Array.from(new Set(matchedSymbols)).slice(0, 2).join(', ')}`);
     }
 
-    if (vecSim >= 0.18) {
+    if ((bm25Scores.get(node.path) ?? 0) > 1.2) {
+      reasons.push(`BM25 词法高相关 (${(bm25Scores.get(node.path) ?? 0).toFixed(1)})`);
+    }
+    if (vecSim >= 0.2) {
       reasons.push(`向量语义相似度 ${(vecSim * 100).toFixed(0)}%`);
     }
 
-    baseScores.set(node.path, { vectorScore: vecSim, exactBoost, reasons });
+    exactScores.set(node.path, exact);
+    reasonsMap.set(node.path, reasons);
   }
 
-  // Pick top seed anchors for Graph 1-hop propagation
-  const topAnchors = Array.from(baseScores.entries())
-    .sort((a, b) => b[1].exactBoost + b[1].vectorScore - (a[1].exactBoost + a[1].vectorScore))
-    .slice(0, 3)
-    .filter(([, s]) => s.exactBoost + s.vectorScore > 0.2);
+  // Build individual ranked lists for RRF
+  const bm25Rank = new Map<string, number>();
+  Array.from(bm25Scores.entries())
+    .filter(([, s]) => s > 0)
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([fp], idx) => bm25Rank.set(fp, idx + 1));
 
-  const graphBoostMap = new Map<string, { boost: number; reasons: string[] }>();
-  for (const [anchorPath] of topAnchors) {
-    const metrics = graph.nodes[anchorPath];
+  const vectorRank = new Map<string, number>();
+  Array.from(vectorScores.entries())
+    .filter(([, s]) => s > 0.08)
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([fp], idx) => vectorRank.set(fp, idx + 1));
+
+  // Graph 1-hop propagation from top 3 combined lexical/exact/vector anchors
+  const preAnchors = nodes
+    .map((n) => ({
+      path: n.path,
+      score:
+        (exactScores.get(n.path) ?? 0) * 3 +
+        (bm25Rank.has(n.path) ? 1 / (RRF_K + bm25Rank.get(n.path)!) : 0) * 40 +
+        (vectorRank.has(n.path) ? 1 / (RRF_K + vectorRank.get(n.path)!) : 0) * 40,
+    }))
+    .filter((a) => a.score > 0.3)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+
+  const graphScores = new Map<string, number>();
+  for (const anchor of preAnchors) {
+    const metrics = graph.nodes[anchor.path];
     if (!metrics) continue;
-
     for (const caller of metrics.dependedBy) {
-      const prev = graphBoostMap.get(caller) ?? { boost: 0, reasons: [] };
-      prev.boost += 0.24;
-      prev.reasons.push(`依赖核心命中文件 ${index.files[anchorPath]?.name}`);
-      graphBoostMap.set(caller, prev);
+      graphScores.set(caller, Math.min(0.45, (graphScores.get(caller) ?? 0) + 0.25));
+      reasonsMap.get(caller)?.push(`调用关联文件 ${index.files[anchor.path]?.name}`);
     }
-
     for (const dep of metrics.dependsOn) {
-      const prev = graphBoostMap.get(dep) ?? { boost: 0, reasons: [] };
-      prev.boost += 0.2;
-      prev.reasons.push(`被命中文件 ${index.files[anchorPath]?.name} 直接调用`);
-      graphBoostMap.set(dep, prev);
+      graphScores.set(dep, Math.min(0.45, (graphScores.get(dep) ?? 0) + 0.22));
+      reasonsMap.get(dep)?.push(`被命中文件 ${index.files[anchor.path]?.name} 直接依赖`);
     }
   }
 
+  const graphRank = new Map<string, number>();
+  Array.from(graphScores.entries())
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([fp], idx) => graphRank.set(fp, idx + 1));
+
+  // Fuse all 4 signals via weighted RRF
   const hits: RetrievalHit[] = [];
-  for (const node of Object.values(index.files)) {
-    const base = baseScores.get(node.path)!;
-    const gBoost = graphBoostMap.get(node.path);
-    const metrics = graph.nodes[node.path];
+  for (const node of nodes) {
     const isBarrel = node.name === 'index.ts' || node.name === 'index.js';
-    const rawGraphBoost = Math.min(0.22, gBoost?.boost ?? 0) + (metrics?.isHub ? 0.04 : 0);
-    const graphBoost = isBarrel ? rawGraphBoost * 0.35 : rawGraphBoost;
-    const totalScore = base.exactBoost + base.vectorScore * 0.85 + graphBoost;
+    const exact = exactScores.get(node.path) ?? 0;
+    const bm25 = bm25Scores.get(node.path) ?? 0;
+    const vec = vectorScores.get(node.path) ?? 0;
+    const gScore = graphScores.get(node.path) ?? 0;
 
-    if (totalScore <= 0.08) continue;
+    let rrf = 0;
+    if (exact > 0) rrf += exact * 0.04;
+    if (bm25Rank.has(node.path)) rrf += 1.25 / (RRF_K + bm25Rank.get(node.path)!);
+    if (vectorRank.has(node.path)) rrf += 1.15 / (RRF_K + vectorRank.get(node.path)!);
+    if (graphRank.has(node.path)) {
+      const gWeight = isBarrel ? 0.22 : 0.55;
+      rrf += gWeight / (RRF_K + graphRank.get(node.path)!);
+    }
 
-    const matchReasons = [...base.reasons, ...(gBoost?.reasons ?? [])];
-    if (metrics?.isHub && matchReasons.length > 0) {
-      matchReasons.push(`核心枢纽（被 ${metrics.totalDownstreamReach} 个文件依赖）`);
+    if (rrf <= 0.005) continue;
+
+    const metrics = graph.nodes[node.path];
+    const reasons = reasonsMap.get(node.path) ?? [];
+    if (metrics?.isHub && reasons.length > 0) {
+      reasons.push(`核心枢纽（波及 ${metrics.totalDownstreamReach} 个文件）`);
     }
 
     hits.push({
       file: node,
-      totalScore: Number(totalScore.toFixed(4)),
-      vectorScore: Number(base.vectorScore.toFixed(4)),
-      graphBoost: Number(graphBoost.toFixed(4)),
-      exactBoost: Number(base.exactBoost.toFixed(4)),
-      matchReasons: Array.from(new Set(matchReasons)),
+      totalScore: Number((rrf * 100).toFixed(2)),
+      bm25Score: Number(bm25.toFixed(2)),
+      vectorScore: Number(vec.toFixed(3)),
+      graphBoost: Number(gScore.toFixed(3)),
+      exactBoost: Number(exact.toFixed(2)),
+      matchReasons: Array.from(new Set(reasons)),
     });
   }
 

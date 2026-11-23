@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { ParsedSymbol } from './astParser.ts';
 import {
   buildCodeGraph,
   computeBlastRadius,
@@ -13,12 +14,64 @@ import {
   type RetrievalHit,
 } from './embeddingIndex.ts';
 import {
+  buildSymbolCallGraph,
+  type ExternalGraphHint,
+  type GraphProvider,
+  type GraphSnapshot,
+  type SymbolCallEdge,
+  type SymbolCallGraph,
+} from './graphProvider.ts';
+import { McpEnrichedGraphProvider, type McpGraphProviderConfig } from './mcpGraphProvider.ts';
+import {
   buildOrUpdateRepoIndex,
   type FileLayer,
   type IndexedFileNode,
   type RepoIndex,
 } from './repoIndexer.ts';
 import { estimateTokens, runStaticAnalysis, type StaticExtractionResult } from './staticAnalyzer.ts';
+
+/**
+ * Default Zero-Docker Built-in GraphRAG Provider:
+ * Real TypeScript Compiler AST + Function-Level Call Graph + BM25 & Vector RRF + SHA-256 Incremental Cache.
+ */
+export class BuiltInAstGraphProvider implements GraphProvider {
+  readonly name = 'builtin-ast-graphrag';
+
+  async buildSnapshot(
+    rootDir: string,
+    options?: { persistCache?: boolean; embeddingConfig?: EmbeddingProviderConfig }
+  ): Promise<GraphSnapshot> {
+    const index = buildOrUpdateRepoIndex(rootDir, { persistCache: options?.persistCache ?? true });
+    const embedMeta = await ensureEmbeddings(index, options?.embeddingConfig);
+    const fileGraph = buildCodeGraph(index);
+    const callGraph = buildSymbolCallGraph(index);
+
+    if (options?.persistCache ?? true) {
+      try {
+        const cachePath = path.join(index.rootDir, '.glassbox', 'index.json');
+        fs.writeFileSync(cachePath, JSON.stringify(index, null, 2), 'utf8');
+      } catch {
+        // ignore read-only fs
+      }
+    }
+
+    return {
+      providerName: this.name,
+      index,
+      fileGraph,
+      callGraph,
+      embeddingMode: embedMeta.mode,
+    };
+  }
+}
+
+export function createGraphProvider(mcpConfig?: McpGraphProviderConfig): GraphProvider {
+  const base = new BuiltInAstGraphProvider();
+  if (mcpConfig?.command) {
+    return new McpEnrichedGraphProvider(base, mcpConfig);
+  }
+  return base;
+}
 
 export interface RepoMapSection {
   layer: FileLayer;
@@ -33,13 +86,16 @@ export interface RepoMapSection {
     downstreamReach: number;
     isHub: boolean;
     exports: string[];
+    symbolCount: number;
   }>;
 }
 
 export interface RepoComprehensionMap {
   repoName: string;
   rootDir: string;
+  providerName: string;
   totalFiles: number;
+  totalSymbols: number;
   reindexedFiles: number;
   cachedFiles: number;
   scanMs: number;
@@ -51,6 +107,19 @@ export interface RepoComprehensionMap {
     downstreamReach: number;
   }>;
   sections: RepoMapSection[];
+}
+
+export interface SymbolTraceReport {
+  repoName: string;
+  querySymbol: string;
+  matches: Array<{
+    symbol: ParsedSymbol;
+    fileRole: string;
+    calledBy: SymbolCallEdge[];
+    callsOut: SymbolCallEdge[];
+  }>;
+  externalHint?: ExternalGraphHint | null;
+  traceMs: number;
 }
 
 export interface FixDirection {
@@ -66,24 +135,23 @@ export interface FixDirection {
 export interface ProblemProjectionReport {
   repoName: string;
   rootDir: string;
+  providerName: string;
   querySummary: string;
-  /** Primary file where the issue originates or manifests */
   primaryTarget?: {
     file: IndexedFileNode;
     line?: number;
+    symbol?: ParsedSymbol;
     reason: string;
   };
-  /** Plain-Chinese 1-paragraph explanation anchored to real file roles */
   plainDiagnosis: string;
-  /** Graph-computed exact Blast Radius */
   blastRadius?: BlastRadiusReport;
-  /** Hybrid Graph + Embedding top relevant files */
+  /** Function-level callers of the broken symbol (AST Call Graph!) */
+  symbolCallers: SymbolCallEdge[];
+  /** Optional enrichment from an external Graph-RAG MCP server (CodeGraphContext / code-graph-rag / Serena) */
+  externalGraphHint?: ExternalGraphHint | null;
   retrievedContext: RetrievalHit[];
-  /** Static silent regression flags found in Git diff (if provided) */
   silentRegressions: StaticExtractionResult['silentRegressions'];
-  /** Graph-informed architectural fix directions */
   directions: FixDirection[];
-  /** Real token compression proof: whole repo vs retrieved minimal slice */
   tokenEconomy: {
     wholeRepoTokens: number;
     retrievedSliceTokens: number;
@@ -118,7 +186,6 @@ const LAYER_ORDER: FileLayer[] = [
 function matchParsedPathToRepoFile(rawFile: string, index: RepoIndex): string | undefined {
   const norm = rawFile.replace(/\\/g, '/').replace(/^\.\//, '');
   if (index.files[norm]) return norm;
-  // Suffix match (e.g. "src/schema.ts" -> "packages/core/src/schema.ts")
   const all = Object.keys(index.files);
   const exactSuffix = all.find((p) => p.endsWith(`/${norm}`) || p === norm);
   if (exactSuffix) return exactSuffix;
@@ -126,13 +193,16 @@ function matchParsedPathToRepoFile(rawFile: string, index: RepoIndex): string | 
   return all.find((p) => path.posix.basename(p) === base);
 }
 
+function findSymbolAtLine(fileNode: IndexedFileNode, line?: number): ParsedSymbol | undefined {
+  if (!line || !fileNode.symbols?.length) return undefined;
+  return fileNode.symbols.find((s) => line >= s.startLine && line <= s.endLine);
+}
+
 function readCodeSlice(rootDir: string, relPath: string, centerLine?: number, radius = 15): string {
   try {
     const content = fs.readFileSync(path.join(rootDir, relPath), 'utf8');
     const lines = content.split('\n');
-    if (!centerLine) {
-      return lines.slice(0, Math.min(35, lines.length)).join('\n');
-    }
+    if (!centerLine) return lines.slice(0, Math.min(35, lines.length)).join('\n');
     const start = Math.max(0, centerLine - radius - 1);
     const end = Math.min(lines.length, centerLine + radius);
     return lines
@@ -144,31 +214,28 @@ function readCodeSlice(rootDir: string, relPath: string, centerLine?: number, ra
   }
 }
 
-/**
- * 1. Build a 10-second Human Comprehension Map of ANY local repository
- *    using incremental structured scanning + Graph centrality + Embedding indexing.
- */
 export async function generateRepoMap(
   rootDir: string,
-  options?: { persistCache?: boolean; embeddingConfig?: EmbeddingProviderConfig }
+  options?: {
+    persistCache?: boolean;
+    embeddingConfig?: EmbeddingProviderConfig;
+    provider?: GraphProvider;
+    mcpConfig?: McpGraphProviderConfig;
+  }
 ): Promise<{
   map: RepoComprehensionMap;
   index: RepoIndex;
   graph: CodeDependencyGraph;
+  callGraph: SymbolCallGraph;
+  snapshot: GraphSnapshot;
 }> {
-  const index = buildOrUpdateRepoIndex(rootDir, { persistCache: options?.persistCache ?? true });
-  const embedMeta = await ensureEmbeddings(index, options?.embeddingConfig);
-  const graph = buildCodeGraph(index);
+  const provider = options?.provider ?? createGraphProvider(options?.mcpConfig);
+  const snapshot = await provider.buildSnapshot(rootDir, {
+    persistCache: options?.persistCache ?? true,
+    embeddingConfig: options?.embeddingConfig,
+  });
 
-  // Persist updated embeddings into .glassbox/index.json
-  if (options?.persistCache ?? true) {
-    try {
-      const cachePath = path.join(index.rootDir, '.glassbox', 'index.json');
-      fs.writeFileSync(cachePath, JSON.stringify(index, null, 2), 'utf8');
-    } catch {
-      // ignore read-only fs
-    }
-  }
+  const { index, fileGraph: graph, callGraph } = snapshot;
 
   const byLayer = new Map<FileLayer, RepoMapSection['files']>();
   for (const node of Object.values(index.files)) {
@@ -184,6 +251,7 @@ export async function generateRepoMap(
       downstreamReach: m.totalDownstreamReach,
       isHub: m.isHub,
       exports: node.exports.slice(0, 5),
+      symbolCount: node.symbols?.length ?? 0,
     });
     byLayer.set(node.layer, bucket);
   }
@@ -193,11 +261,7 @@ export async function generateRepoMap(
     const files = byLayer.get(layer);
     if (!files || files.length === 0) continue;
     files.sort((a, b) => b.downstreamReach - a.downstreamReach || a.path.localeCompare(b.path));
-    sections.push({
-      layer,
-      layerTitle: LAYER_TITLES[layer],
-      files,
-    });
+    sections.push({ layer, layerTitle: LAYER_TITLES[layer], files });
   }
 
   const hubs = graph.hubs.slice(0, 5).map((h) => ({
@@ -211,26 +275,72 @@ export async function generateRepoMap(
     map: {
       repoName: index.repoName,
       rootDir: index.rootDir,
+      providerName: snapshot.providerName,
       totalFiles: index.stats.totalFiles,
+      totalSymbols: index.stats.totalSymbols,
       reindexedFiles: index.stats.reindexedFiles,
       cachedFiles: index.stats.cachedFiles,
       scanMs: index.stats.scanMs,
-      embeddingMode: embedMeta.mode,
+      embeddingMode: snapshot.embeddingMode,
       hubs,
       sections,
     },
     index,
     graph,
+    callGraph,
+    snapshot,
   };
 }
 
 /**
- * 2. Natural-language or Symbol Codebase Q&A powered by Hybrid Graph + Embedding Retrieval
+ * Trace any Function, Component, Class, or Type across the real repository AST Call Graph!
  */
+export async function traceSymbol(
+  rootDir: string,
+  symbolQuery: string,
+  options?: { provider?: GraphProvider; mcpConfig?: McpGraphProviderConfig }
+): Promise<SymbolTraceReport> {
+  const startedAt = Date.now();
+  const provider = options?.provider ?? createGraphProvider(options?.mcpConfig);
+  const { index, callGraph } = await generateRepoMap(rootDir, { provider });
+
+  const q = symbolQuery.toLowerCase();
+  const matchedSymbols = Object.values(callGraph.symbolsById)
+    .filter((s) => s.name.toLowerCase() === q || s.name.toLowerCase().includes(q))
+    .sort((a, b) => {
+      const aExact = a.name.toLowerCase() === q ? 1 : 0;
+      const bExact = b.name.toLowerCase() === q ? 1 : 0;
+      return bExact - aExact || (callGraph.incoming[b.id]?.length ?? 0) - (callGraph.incoming[a.id]?.length ?? 0);
+    })
+    .slice(0, 5);
+
+  const externalHint = provider.queryExternalContext
+    ? await provider.queryExternalContext(rootDir, `Trace callers of ${symbolQuery}`, symbolQuery)
+    : null;
+
+  return {
+    repoName: index.repoName,
+    querySymbol: symbolQuery,
+    matches: matchedSymbols.map((sym) => ({
+      symbol: sym,
+      fileRole: index.files[sym.file]?.roleLabel ?? '模块',
+      calledBy: callGraph.incoming[sym.id] ?? [],
+      callsOut: callGraph.outgoing[sym.id] ?? [],
+    })),
+    externalHint,
+    traceMs: Math.max(1, Date.now() - startedAt),
+  };
+}
+
 export async function askRepository(
   rootDir: string,
   question: string,
-  options?: { topK?: number; embeddingConfig?: EmbeddingProviderConfig }
+  options?: {
+    topK?: number;
+    embeddingConfig?: EmbeddingProviderConfig;
+    provider?: GraphProvider;
+    mcpConfig?: McpGraphProviderConfig;
+  }
 ): Promise<{
   repoName: string;
   question: string;
@@ -240,10 +350,13 @@ export async function askRepository(
   wholeRepoTokens: number;
   retrievedSliceTokens: number;
   savedPercent: number;
+  embeddingMode: string;
 }> {
   const startedAt = Date.now();
-  const { index, graph } = await generateRepoMap(rootDir, {
+  const { map, index, graph } = await generateRepoMap(rootDir, {
     embeddingConfig: options?.embeddingConfig,
+    provider: options?.provider,
+    mcpConfig: options?.mcpConfig,
   });
 
   const hits = await hybridRetrieve(index, graph, question, {
@@ -277,22 +390,24 @@ export async function askRepository(
     wholeRepoTokens,
     retrievedSliceTokens,
     savedPercent,
+    embeddingMode: map.embeddingMode,
   };
 }
 
-/**
- * 3. Problem Projection Engine:
- *    Projects a real error, stack trace, git diff, or problem description onto the real Repo Graph,
- *    revealing: what file role broke, exact blast radius, unaffected safe zones, and concrete AI fix directions.
- */
 export async function projectProblemOntoRepo(
   rootDir: string,
   input: { rawError?: string; rawDiff?: string; question?: string },
-  options?: { embeddingConfig?: EmbeddingProviderConfig }
+  options?: {
+    embeddingConfig?: EmbeddingProviderConfig;
+    provider?: GraphProvider;
+    mcpConfig?: McpGraphProviderConfig;
+  }
 ): Promise<ProblemProjectionReport> {
   const startedAt = Date.now();
-  const { map, index, graph } = await generateRepoMap(rootDir, {
+  const provider = options?.provider ?? createGraphProvider(options?.mcpConfig);
+  const { map, index, graph, callGraph } = await generateRepoMap(rootDir, {
     embeddingConfig: options?.embeddingConfig,
+    provider,
   });
 
   const staticRes = runStaticAnalysis({
@@ -300,7 +415,6 @@ export async function projectProblemOntoRepo(
     rawDiff: input.rawDiff,
   });
 
-  // Resolve exact seed files mentioned in error or diff
   const seedFiles: string[] = [];
   let primaryLine: number | undefined;
 
@@ -334,31 +448,55 @@ export async function projectProblemOntoRepo(
 
   const primaryPath = seedFiles[0] ?? retrievedContext[0]?.file.path;
   const primaryNode = primaryPath ? index.files[primaryPath] : undefined;
+  const primarySymbol = primaryNode ? findSymbolAtLine(primaryNode, primaryLine) : undefined;
   const blastRadius = primaryPath ? computeBlastRadius(index, graph, primaryPath) ?? undefined : undefined;
 
-  // Build plain-Chinese diagnosis anchored to real file roles & blast radius
+  // Function-level callers from AST Call Graph!
+  let symbolCallers: SymbolCallEdge[] = [];
+  if (primarySymbol) {
+    symbolCallers = callGraph.incoming[primarySymbol.id] ?? [];
+  } else if (primaryNode) {
+    // Aggregate top cross-file callers to any exported symbol in this file
+    const allIncoming: SymbolCallEdge[] = [];
+    for (const sym of primaryNode.symbols ?? []) {
+      for (const edge of callGraph.incoming[sym.id] ?? []) {
+        if (edge.callerFile !== primaryNode.path) allIncoming.push(edge);
+      }
+    }
+    symbolCallers = allIncoming.slice(0, 6);
+  }
+
+  // Optional external Graph-RAG MCP enrichment
+  const externalGraphHint = provider.queryExternalContext
+    ? await provider.queryExternalContext(
+        rootDir,
+        combinedQuery || primaryPath || '',
+        primarySymbol?.name ?? staticRes.typeMismatch?.symbol
+      )
+    : null;
+
   let plainDiagnosis = '';
   if (primaryNode && blastRadius) {
     const impactCount = blastRadius.directImpact.length + blastRadius.indirectImpact.length;
-    const roleDesc = `「${primaryNode.roleLabel}」(${primaryNode.path})`;
+    const symTag = primarySymbol ? ` 的 \`${primarySymbol.name}()\`` : '';
+    const roleDesc = `「${primaryNode.roleLabel}」(${primaryNode.path}${symTag})`;
     if (staticRes.typeMismatch) {
       plainDiagnosis = `问题出在 ${roleDesc}：它期望的数据形状是 \`${staticRes.typeMismatch.expected}\`，但实际收到了 \`${staticRes.typeMismatch.actual}\`。${
         impactCount > 0
-          ? `因为它是被 ${impactCount} 个上游/下游文件依赖的节点，修改它前需要先确认波及面。`
+          ? `因为它是被 ${impactCount} 个上下游文件依赖的节点，修改它前需要先确认波及面。`
           : `好消息是它处于调用链末端（0 个其他文件依赖它），可以放心局部修复。`
       }`;
     } else if (staticRes.silentRegressions.length > 0) {
       plainDiagnosis = `在 ${roleDesc} 的代码变更中，静态规则拦截到 ${staticRes.silentRegressions.length} 处静默风险（如删守卫、空 catch 或类型绕过）。表面上可能不报错，但已经改变了原有安全/业务行为。`;
     } else if (staticRes.cleanedErrorLines.length > 0) {
-      plainDiagnosis = `报错锚定在 ${roleDesc}${primaryLine ? ` 第 ${primaryLine} 行` : ''}（职责：${primaryNode.summary}）。它依赖 ${blastRadius.upstreamDependencies.length} 个内部文件，且影响下游 ${impactCount} 个文件；其余 ${blastRadius.safeZoneCount} 个文件完全不受波及。`;
+      plainDiagnosis = `报错锚定在 ${roleDesc}${primaryLine ? ` 第 ${primaryLine} 行` : ''}（职责：${primaryNode.summary}）。它依赖 ${blastRadius.upstreamDependencies.length} 个内部文件，影响下游 ${impactCount} 个文件；其余 ${blastRadius.safeZoneCount} 个文件完全不受波及。`;
     } else {
-      plainDiagnosis = `通过 Graph + Embedding 混合检索，最相关的核心位置是 ${roleDesc}（职责：${primaryNode.summary}）。`;
+      plainDiagnosis = `通过 GraphRAG（BM25 + 向量 + 依赖图 RRF）混合检索，最相关的核心位置是 ${roleDesc}（职责：${primaryNode.summary}）。`;
     }
   } else {
     plainDiagnosis = '暂未在当前仓库内匹配到具体源文件，建议提供包含文件名、符号名或具体报错信息的片段。';
   }
 
-  // Generate Graph-informed AI Fix Directions (truly tailored to Hub vs Bridge vs Leaf!)
   const directions: FixDirection[] = [];
   if (primaryNode && blastRadius) {
     const impactCount = blastRadius.directImpact.length + blastRadius.indirectImpact.length;
@@ -375,7 +513,7 @@ export async function projectProblemOntoRepo(
         affectedFilesCount: 1,
         tradeoff: '风险最低、10 秒止血，不会引发连锁报错',
         recommended: true,
-        surgicalPrompt: `[GlassBox Direction: Protect Hub]\nKeep the existing exported contract of \`${primaryNode.path}\` intact (it has ${impactCount} downstream dependents: ${impactListStr}). Isolate the new requirement via an additive/optional field or adapter instead of breaking existing callers. Do NOT use \`as any\` or empty \`catch\`.`,
+        surgicalPrompt: `[GlassBox Direction: Protect Hub]\nKeep the existing exported contract of \`${primaryNode.path}\`${primarySymbol ? ` (${primarySymbol.name})` : ''} intact (it has ${impactCount} downstream dependents: ${impactListStr}). Isolate the new requirement via an additive/optional field or adapter instead of breaking existing callers. Do NOT use \`as any\` or empty \`catch\`.`,
       });
       directions.push({
         id: 'dir-cascade-upgrade',
@@ -428,7 +566,6 @@ export async function projectProblemOntoRepo(
     }
   }
 
-  // Real Token Economy: compare sending the whole repo vs only our Graph+Embedding minimal slice
   const wholeRepoTokens = Object.values(index.files).reduce(
     (sum, f) => sum + Math.ceil(f.sizeBytes / 3.8),
     0
@@ -453,11 +590,13 @@ export async function projectProblemOntoRepo(
   return {
     repoName: index.repoName,
     rootDir: index.rootDir,
+    providerName: map.providerName,
     querySummary: combinedQuery.slice(0, 140) || '(Git Diff / Project Scan)',
     primaryTarget: primaryNode
       ? {
           file: primaryNode,
           line: primaryLine,
+          symbol: primarySymbol,
           reason:
             retrievedContext.find((h) => h.file.path === primaryNode.path)?.matchReasons.join('；') ||
             '直接命中报错源头',
@@ -465,6 +604,8 @@ export async function projectProblemOntoRepo(
       : undefined,
     plainDiagnosis,
     blastRadius,
+    symbolCallers,
+    externalGraphHint,
     retrievedContext,
     silentRegressions: staticRes.silentRegressions,
     directions,

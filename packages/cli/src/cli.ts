@@ -6,6 +6,8 @@ import {
   askRepository,
   generateRepoMap,
   projectProblemOntoRepo,
+  traceSymbol,
+  type McpGraphProviderConfig,
 } from '@glassbox/core/engine';
 
 const C = {
@@ -52,37 +54,48 @@ function readStdinIfPiped(): string {
   }
 }
 
+function resolveMcpConfig(flags: Record<string, string | boolean>): McpGraphProviderConfig | undefined {
+  const cmd =
+    (typeof flags['mcp-cmd'] === 'string' ? flags['mcp-cmd'] : undefined) ||
+    process.env.GLASSBOX_MCP_GRAPH_CMD;
+  if (!cmd) return undefined;
+  return { command: cmd };
+}
+
 function printHelp() {
   console.log(`
-${C.bold}GlassBox Engine CLI${C.reset} ${C.dim}— 结构化代码索引 + Graph + Embedding 极速代码透视${C.reset}
+${C.bold}GlassBox GraphRAG Engine CLI v0.2${C.reset} ${C.dim}— AST 函数调用图 + BM25/向量 RRF + 可插拔开源 Graph-RAG MCP${C.reset}
 
 用法:
   ${C.cyan}npm run gb -- map [目录]${C.reset}
-      10 秒看懂任意陌生仓库：增量扫描 + 依赖图枢纽识别 + 每个文件人话职责
+      10 秒看懂任意陌生仓库：AST 增量索引 + 核心枢纽识别 + 每个文件人话职责
 
   ${C.cyan}npm run gb -- ask "<自然语言问题>" [目录]${C.reset}
-      用 Graph + Embedding 混合检索定位相关文件，并展示上下游影响关系
+      用 BM25 + 向量 + 依赖图 RRF 混合检索，毫秒级定位相关文件及上下游关系
+
+  ${C.cyan}npm run gb -- trace <函数或组件名> [目录]${C.reset}
+      跨文件函数/组件级调用图追踪：定位定义位置、谁调用了它、它调用了谁
 
   ${C.cyan}npm run gb -- diagnose --error "<报错文本>" [目录]${C.reset}
-      把真实报错投影到项目地图上：人话原因 + 爆炸半径 + 安全区 + 给 AI 的修改方向
-      （也支持 --git 读取真实 git diff，或管道传入 cat err.log | ...）
+      把真实报错或 --git diff 投影到依赖图上：人话原因 + 函数调用链 + 爆炸半径 + 给 AI 的修改方向
 
 可选参数:
-  --json    输出标准 JSON（供后续桌面原生 HUD / Codex / Orca / MCP 直接消费）
+  --mcp-cmd "<命令>"  挂载外部开源 Graph-RAG MCP（如 "cgc mcp start" / code-graph-rag / Serena）
+  --json              输出标准 JSON（供桌面原生 HUD / Codex / Orca / MCP 直接消费）
 `);
 }
 
-async function runMap(targetDir: string, asJson: boolean) {
-  const { map } = await generateRepoMap(targetDir);
+async function runMap(targetDir: string, asJson: boolean, mcpConfig?: McpGraphProviderConfig) {
+  const { map } = await generateRepoMap(targetDir, { mcpConfig });
   if (asJson) {
     console.log(JSON.stringify(map, null, 2));
     return;
   }
 
   console.log(
-    `\n${C.bold}🗺️  项目人话地图 · ${map.repoName}${C.reset} ${C.dim}(${map.totalFiles} 个源文件 | 新解析 ${map.reindexedFiles} / 缓存命中 ${map.cachedFiles} | ${map.scanMs}ms | ${map.embeddingMode})${C.reset}`
+    `\n${C.bold}🗺️  项目人话地图 · ${map.repoName}${C.reset} ${C.dim}(${map.totalFiles} 文件 / ${map.totalSymbols} AST 符号 | 新解析 ${map.reindexedFiles} / 缓存 ${map.cachedFiles} | ${map.scanMs}ms | ${map.embeddingMode})${C.reset}`
   );
-  console.log(`${C.dim}   增量缓存已写入 ${path.join(map.rootDir, '.glassbox/index.json')}${C.reset}\n`);
+  console.log(`${C.dim}   GraphProvider: ${map.providerName} · 增量缓存: ${path.join(map.rootDir, '.glassbox/index.json')}${C.reset}\n`);
 
   if (map.hubs.length > 0) {
     console.log(`${C.bold}${C.yellow}⭐ 核心枢纽文件（改这些文件要小心，影响面最大）${C.reset}`);
@@ -99,7 +112,7 @@ async function runMap(targetDir: string, asJson: boolean) {
     console.log(`${C.bold}${sec.layerTitle}${C.reset}`);
     for (const f of sec.files) {
       const hubTag = f.isHub ? ` ${C.yellow}(枢纽·波及${f.downstreamReach})${C.reset}` : '';
-      const depTag = `${C.gray}[入:${f.inDegree} 出:${f.outDegree}]${C.reset}`;
+      const depTag = `${C.gray}[入:${f.inDegree} 出:${f.outDegree} · ${f.symbolCount}符号]${C.reset}`;
       console.log(`  ${C.cyan}${f.path}${C.reset} ${depTag}${hubTag}`);
       console.log(`    ${C.bold}${f.roleLabel}${C.reset}：${f.summary}`);
     }
@@ -107,14 +120,14 @@ async function runMap(targetDir: string, asJson: boolean) {
   }
 }
 
-async function runAsk(question: string, targetDir: string, asJson: boolean) {
-  const res = await askRepository(targetDir, question);
+async function runAsk(question: string, targetDir: string, asJson: boolean, mcpConfig?: McpGraphProviderConfig) {
+  const res = await askRepository(targetDir, question, { mcpConfig });
   if (asJson) {
     console.log(JSON.stringify(res, null, 2));
     return;
   }
 
-  console.log(`\n${C.bold}🔎 Graph + Embedding 混合检索：${C.cyan}${res.question}${C.reset}`);
+  console.log(`\n${C.bold}🔎 GraphRAG (BM25 + 向量 + 依赖图 RRF) 检索：${C.cyan}${res.question}${C.reset}`);
   console.log(
     `${C.green}⚡ 耗时 ${res.retrievalMs}ms | 仅需读取 ${res.retrievedSliceTokens.toLocaleString()} / ${res.wholeRepoTokens.toLocaleString()} tok（省 ${res.savedPercent}%）${C.reset}\n`
   );
@@ -126,12 +139,12 @@ async function runAsk(question: string, targetDir: string, asJson: boolean) {
 
   res.hits.forEach((hit, idx) => {
     console.log(
-      `${C.bold}${idx + 1}. ${hit.file.path}${C.reset} ${C.dim}(${hit.file.roleLabel} · 综合分 ${hit.totalScore})${C.reset}`
+      `${C.bold}${idx + 1}. ${hit.file.path}${C.reset} ${C.dim}(${hit.file.roleLabel} · RRF ${hit.totalScore})${C.reset}`
     );
     console.log(`   职责：${hit.file.summary}`);
     console.log(`   命中依据：${C.dim}${hit.matchReasons.join(' · ')}${C.reset}`);
     if (hit.file.exports.length > 0) {
-      console.log(`   核心导出：${C.gray}${hit.file.exports.slice(0, 6).join(', ')}${C.reset}`);
+      console.log(`   真实 AST 导出：${C.gray}${hit.file.exports.slice(0, 6).join(', ')}${C.reset}`);
     }
     console.log('');
   });
@@ -153,9 +166,56 @@ async function runAsk(question: string, targetDir: string, asJson: boolean) {
   }
 }
 
+async function runTrace(symbolQuery: string, targetDir: string, asJson: boolean, mcpConfig?: McpGraphProviderConfig) {
+  const report = await traceSymbol(targetDir, symbolQuery, { mcpConfig });
+  if (asJson) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+
+  console.log(`\n${C.bold}🧬 AST 函数/组件调用图追踪：${C.cyan}${report.querySymbol}${C.reset} ${C.dim}(${report.traceMs}ms)${C.reset}\n`);
+  if (report.matches.length === 0) {
+    console.log(`${C.yellow}未在 AST 符号表中找到 "${symbolQuery}"。${C.reset}\n`);
+    return;
+  }
+
+  for (const m of report.matches) {
+    console.log(
+      `${C.bold}${m.symbol.name}${C.reset} ${C.dim}[${m.symbol.kind}] · ${m.symbol.file}:${m.symbol.startLine}-${m.symbol.endLine} (${m.fileRole})${C.reset}`
+    );
+    console.log(`   签名：${C.gray}${m.symbol.signature}${C.reset}`);
+    console.log(
+      `   📥 被谁调用 (${m.calledBy.length})：${
+        m.calledBy.length > 0
+          ? m.calledBy.map((e) => `${e.callerName} (${e.callerFile}:${e.callerLine})`).join(' · ')
+          : '无跨文件调用方'
+      }`
+    );
+    console.log(
+      `   📤 内部调用 (${m.callsOut.length})：${
+        m.callsOut.length > 0
+          ? m.callsOut.map((e) => `${e.calleeName} (${e.calleeFile.split('/').pop()}:${e.calleeLine})`).join(' · ')
+          : '无内部调用'
+      }`
+    );
+    console.log('');
+  }
+
+  if (report.externalHint) {
+    console.log(`${C.bold}🔌 外部 Graph-RAG MCP 补充 (${report.externalHint.providerName} · ${report.externalHint.toolUsed})${C.reset}`);
+    console.log(`   ${C.dim}${report.externalHint.rawSummary}${C.reset}\n`);
+  }
+}
+
 async function runDiagnose(
   targetDir: string,
-  options: { errorText?: string; useGit?: boolean; question?: string; asJson: boolean }
+  options: {
+    errorText?: string;
+    useGit?: boolean;
+    question?: string;
+    asJson: boolean;
+    mcpConfig?: McpGraphProviderConfig;
+  }
 ) {
   let rawDiff = '';
   if (options.useGit) {
@@ -166,20 +226,24 @@ async function runDiagnose(
     }
   }
 
-  const report = await projectProblemOntoRepo(targetDir, {
-    rawError: options.errorText,
-    rawDiff,
-    question: options.question,
-  });
+  const report = await projectProblemOntoRepo(
+    targetDir,
+    {
+      rawError: options.errorText,
+      rawDiff,
+      question: options.question,
+    },
+    { mcpConfig: options.mcpConfig }
+  );
 
   if (options.asJson) {
     console.log(JSON.stringify(report, null, 2));
     return;
   }
 
-  console.log(`\n${C.bold}🩺 GlassBox 问题投影报告 · ${report.repoName}${C.reset}`);
+  console.log(`\n${C.bold}🩺 GlassBox GraphRAG 问题投影报告 · ${report.repoName}${C.reset} ${C.dim}[${report.providerName}]${C.reset}`);
   console.log(
-    `${C.green}⚡ 检索耗时 ${report.tokenEconomy.retrievalMs}ms | 全仓 ${report.tokenEconomy.wholeRepoTokens.toLocaleString()} tok → 最小上下文切片 ${report.tokenEconomy.retrievedSliceTokens.toLocaleString()} tok（省 ${report.tokenEconomy.savedPercent}%）${C.reset}\n`
+    `${C.green}⚡ 检索耗时 ${report.tokenEconomy.retrievalMs}ms | 全仓 ${report.tokenEconomy.wholeRepoTokens.toLocaleString()} tok → 最小切片 ${report.tokenEconomy.retrievedSliceTokens.toLocaleString()} tok（省 ${report.tokenEconomy.savedPercent}%）${C.reset}\n`
   );
 
   console.log(`${C.bold}1. 一句话看懂出了什么事${C.reset}`);
@@ -196,7 +260,7 @@ async function runDiagnose(
 
     console.log(`${C.bold}2. 真实依赖图爆炸半径 (Blast Radius) ${riskBadge}${C.reset}`);
     console.log(
-      `   📍 出事角色：${C.cyan}${br.originNode.path}${C.reset}（${br.originNode.roleLabel}）`
+      `   📍 出事角色：${C.cyan}${br.originNode.path}${report.primaryTarget?.symbol ? ` :: ${report.primaryTarget.symbol.name}()` : ''}${C.reset}（${br.originNode.roleLabel}）`
     );
     console.log(
       `   ⬆️  上游来源 (${br.upstreamDependencies.length})：${
@@ -215,9 +279,22 @@ async function runDiagnose(
           .join('、')}`
       );
     }
+    if (report.symbolCallers.length > 0) {
+      console.log(
+        `   🧬 函数级调用方：${report.symbolCallers
+          .slice(0, 5)
+          .map((e) => `${e.callerName} (${e.callerFile.split('/').pop()}:${e.callerLine})`)
+          .join(' · ')}`
+      );
+    }
     console.log(
       `   ${C.green}🛡️  安全区：其余 ${br.safeZoneCount} 个业务文件完全不受影响（无需去读）${C.reset}\n`
     );
+  }
+
+  if (report.externalGraphHint) {
+    console.log(`${C.bold}🔌 外部 Graph-RAG MCP 关联情报 (${report.externalGraphHint.toolUsed})${C.reset}`);
+    console.log(`   ${C.dim}${report.externalGraphHint.rawSummary}${C.reset}\n`);
   }
 
   if (report.silentRegressions.length > 0) {
@@ -245,6 +322,7 @@ async function runDiagnose(
 async function main() {
   const { command, flags, positional } = parseArgs(process.argv);
   const asJson = Boolean(flags.json);
+  const mcpConfig = resolveMcpConfig(flags);
 
   if (command === 'help' || command === '--help' || command === '-h') {
     printHelp();
@@ -253,7 +331,7 @@ async function main() {
 
   if (command === 'map') {
     const dir = positional[0] || process.cwd();
-    await runMap(dir, asJson);
+    await runMap(dir, asJson, mcpConfig);
     return;
   }
 
@@ -264,21 +342,32 @@ async function main() {
       process.exit(1);
     }
     const dir = positional[1] || process.cwd();
-    await runAsk(question, dir, asJson);
+    await runAsk(question, dir, asJson, mcpConfig);
+    return;
+  }
+
+  if (command === 'trace') {
+    const symbolName = positional[0];
+    if (!symbolName) {
+      console.error('请提供要追踪的函数/组件名，例如：npm run gb -- trace buildSurgicalFixPrompt');
+      process.exit(1);
+    }
+    const dir = positional[1] || process.cwd();
+    await runTrace(symbolName, dir, asJson, mcpConfig);
     return;
   }
 
   if (command === 'diagnose') {
     const dir = positional[0] || process.cwd();
     const piped = readStdinIfPiped();
-    const errorText =
-      (typeof flags.error === 'string' ? flags.error : '') || piped;
+    const errorText = (typeof flags.error === 'string' ? flags.error : '') || piped;
     const question = typeof flags.question === 'string' ? flags.question : undefined;
     await runDiagnose(dir, {
       errorText,
       useGit: Boolean(flags.git),
       question,
       asJson,
+      mcpConfig,
     });
     return;
   }

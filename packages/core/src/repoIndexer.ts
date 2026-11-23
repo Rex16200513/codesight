@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { parseSourceFileAST, type ParsedSymbol } from './astParser.ts';
 
 export type FileLayer =
   | 'entrypoint'
@@ -25,28 +26,33 @@ export interface IndexedFileNode {
   roleLabel: string;
   /** Plain-Chinese 1-sentence explanation of what this file actually does */
   summary: string;
-  /** Exported functions, classes, interfaces, types, constants */
+  /** Accurate AST-extracted exported functions, classes, interfaces, types, constants */
   exports: string[];
+  /** Function / Class / Interface / Component symbols with line spans & call targets */
+  symbols: ParsedSymbol[];
   /** Raw import specifiers found in code */
   rawImports: string[];
   /** Resolved internal repo file paths (normalized posix relative paths) */
   resolvedImports: string[];
   /** External npm/node packages referenced */
   externalDeps: string[];
-  /** Key domain terms extracted for fast search & embedding */
+  /** Key domain terms extracted for fast BM25 & embedding retrieval */
   keywords: string[];
+  /** Parser engine used ('typescript-ast' | 'fallback-regex') */
+  parserUsed: 'typescript-ast' | 'fallback-regex';
   /** Optional cached dense embedding vector (from local or BYOK embedding provider) */
   embedding?: number[];
   embeddingModel?: string;
 }
 
 export interface RepoIndex {
-  schemaVersion: '1.0';
+  schemaVersion: '2.0';
   rootDir: string;
   repoName: string;
   updatedAt: string;
   stats: {
     totalFiles: number;
+    totalSymbols: number;
     reindexedFiles: number;
     cachedFiles: number;
     scanMs: number;
@@ -114,11 +120,10 @@ function discoverWorkspacePackages(rootDir: string): Map<string, string> {
           const parsed = JSON.parse(raw) as {
             name?: string;
             exports?: Record<string, unknown>;
-            main?: string;
           };
           if (!parsed.name) continue;
           const relDir = toPosix(path.relative(rootDir, dir));
-          // Check common source entry points first
+
           const candidates = [
             path.join(dir, 'src/index.ts'),
             path.join(dir, 'src/index.tsx'),
@@ -131,11 +136,19 @@ function discoverWorkspacePackages(rootDir: string): Map<string, string> {
               break;
             }
           }
-          // Also map sub-exports like @glassbox/ui/styles.css
+
           if (parsed.exports && typeof parsed.exports === 'object') {
             for (const [subKey, subVal] of Object.entries(parsed.exports)) {
-              if (subKey.startsWith('./') && typeof subVal === 'string') {
-                const resolvedSub = path.resolve(dir, subVal);
+              if (!subKey.startsWith('./')) continue;
+              const targetStr =
+                typeof subVal === 'string'
+                  ? subVal
+                  : typeof subVal === 'object' && subVal !== null
+                  ? ((subVal as Record<string, unknown>).import as string | undefined) ||
+                    ((subVal as Record<string, unknown>).default as string | undefined)
+                  : undefined;
+              if (targetStr) {
+                const resolvedSub = path.resolve(dir, targetStr);
                 if (fs.existsSync(resolvedSub)) {
                   const fullSpec = `${parsed.name}/${subKey.slice(2)}`;
                   pkgMap.set(fullSpec, toPosix(path.relative(rootDir, resolvedSub)));
@@ -143,6 +156,7 @@ function discoverWorkspacePackages(rootDir: string): Map<string, string> {
               }
             }
           }
+
           if (!pkgMap.has(parsed.name) && relDir) {
             pkgMap.set(parsed.name, relDir);
           }
@@ -182,64 +196,17 @@ function collectSourceFiles(rootDir: string): string[] {
   return results.sort();
 }
 
-function extractImports(content: string): string[] {
-  const imports = new Set<string>();
-  const patterns = [
-    /(?:import|export)\s+(?:type\s+)?(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]/g,
-    /require\(\s*['"]([^'"]+)['"]\s*\)/g,
-    /import\(\s*['"]([^'"]+)['"]\s*\)/g,
-  ];
-  for (const re of patterns) {
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(content)) !== null) {
-      if (m[1]) imports.add(m[1]);
-    }
-  }
-  return Array.from(imports);
-}
-
-function extractExports(content: string): string[] {
-  const exports = new Set<string>();
-  const patterns = [
-    /export\s+(?:async\s+)?function\s+([A-Za-z0-9_$]+)/g,
-    /export\s+class\s+([A-Za-z0-9_$]+)/g,
-    /export\s+(?:const|let|var)\s+([A-Za-z0-9_$]+)/g,
-    /export\s+(?:interface|type|enum)\s+([A-Za-z0-9_$]+)/g,
-  ];
-  for (const re of patterns) {
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(content)) !== null) {
-      if (m[1]) exports.add(m[1]);
-    }
-  }
-  return Array.from(exports).slice(0, 14);
-}
-
-function extractLeadingComment(content: string): string | undefined {
-  const blockMatch = content.match(/^\s*\/\*\*([\s\S]*?)\*\//);
-  if (blockMatch) {
-    const cleaned = blockMatch[1]
-      .split('\n')
-      .map((l) => l.replace(/^\s*\*\s?/, '').trim())
-      .filter((l) => l.length > 0 && !l.startsWith('@'));
-    if (cleaned.length > 0) return cleaned.slice(0, 2).join(' ');
-  }
-  return undefined;
-}
-
 function resolveImportToRepoFile(
   fromRelPosix: string,
   spec: string,
   allFileSet: Set<string>,
   workspacePkgMap: Map<string, string>
 ): { internal?: string; external?: string } {
-  // 1. Workspace package match (e.g. @glassbox/core)
   if (workspacePkgMap.has(spec)) {
     const target = workspacePkgMap.get(spec)!;
     if (allFileSet.has(target)) return { internal: target };
   }
 
-  // 2. Relative file path resolution
   if (spec.startsWith('.')) {
     const fromDir = path.posix.dirname(fromRelPosix);
     const rawTarget = path.posix.normalize(path.posix.join(fromDir, spec));
@@ -269,18 +236,17 @@ function resolveImportToRepoFile(
 function inferLayerAndRole(
   relPath: string,
   exports: string[],
-  content: string
+  leadingDoc?: string
 ): { layer: FileLayer; roleLabel: string; summary: string } {
   const lower = relPath.toLowerCase();
   const base = path.posix.basename(relPath);
-  const leadingDoc = extractLeadingComment(content);
   const topExports = exports.slice(0, 3).join('、');
 
   if (/\.(test|spec)\.[tj]sx?$/.test(lower)) {
     return {
       layer: 'test',
       roleLabel: '自动化测试',
-      summary: `验证相关核心逻辑的单元测试文件${topExports ? `（涉及 ${topExports}）` : ''}。`,
+      summary: `验证核心逻辑与回归用例的测试文件${topExports ? `（涉及 ${topExports}）` : ''}。`,
     };
   }
 
@@ -306,17 +272,17 @@ function inferLayerAndRole(
       roleLabel: '启动入口',
       summary: leadingDoc
         ? `程序启动入口：${leadingDoc.slice(0, 90)}`
-        : `应用或脚本的启动入口，负责把各模块组装并运行起来。`,
+        : `应用或命令行工具的启动入口，负责把各模块组装并运行起来。`,
     };
   }
 
-  if (lower.includes('server') || lower.includes('api') || lower.includes('sidecar') || lower.includes('bridge')) {
+  if (lower.includes('server') || lower.includes('api') || lower.includes('sidecar') || lower.includes('bridge') || lower.includes('mcp')) {
     return {
       layer: 'server-api',
-      roleLabel: lower.includes('mcp') ? '协议桥接层' : '本地服务网关',
+      roleLabel: lower.includes('mcp') ? 'MCP 协议桥接层' : '本地服务网关',
       summary: leadingDoc
         ? `${leadingDoc.slice(0, 96)}`
-        : `对外提供接口/通信桥接${topExports ? `，核心导出：${topExports}` : ''}。`,
+        : `对外提供接口或外部 MCP 图谱通信桥接${topExports ? `，核心导出：${topExports}` : ''}。`,
     };
   }
 
@@ -342,13 +308,20 @@ function inferLayerAndRole(
     };
   }
 
-  if (lower.includes('analyzer') || lower.includes('engine') || lower.includes('indexer') || lower.includes('graph') || lower.includes('embedding')) {
+  if (
+    lower.includes('analyzer') ||
+    lower.includes('engine') ||
+    lower.includes('indexer') ||
+    lower.includes('graph') ||
+    lower.includes('embedding') ||
+    lower.includes('parser')
+  ) {
     return {
       layer: 'core-logic',
-      roleLabel: '核心分析引擎',
+      roleLabel: '核心 GraphRAG 引擎',
       summary: leadingDoc
         ? `${leadingDoc.slice(0, 96)}`
-        : `核心算法与分析处理模块${topExports ? `，提供 ${topExports}` : ''}。`,
+        : `核心 AST 解析、图谱或检索算法模块${topExports ? `，提供 ${topExports}` : ''}。`,
     };
   }
 
@@ -383,21 +356,22 @@ function inferLayerAndRole(
   };
 }
 
-function extractKeywords(relPath: string, exports: string[], summary: string): string[] {
-  const raw = `${relPath} ${exports.join(' ')} ${summary}`;
+function extractKeywords(relPath: string, exports: string[], symbols: ParsedSymbol[], summary: string): string[] {
+  const symNames = symbols.map((s) => `${s.name} ${s.doc ?? ''}`).join(' ');
+  const raw = `${relPath} ${exports.join(' ')} ${symNames} ${summary}`;
   const tokens = raw
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .toLowerCase()
     .split(/[^a-z0-9\u4e00-\u9fa5]+/)
     .filter((t) => t.length >= 2);
-  return Array.from(new Set(tokens)).slice(0, 32);
+  return Array.from(new Set(tokens)).slice(0, 48);
 }
 
 /**
- * Incremental 0-Token Repository Indexer:
- * - Scans real source files on disk
- * - Reuses cached entries (and cached embeddings!) when SHA-256 hash matches
- * - Resolves both relative imports and workspace package imports into exact file-to-file edges
+ * Incremental v2.0 AST Repository Indexer:
+ * - Uses the real TypeScript Compiler AST for TS/JS/TSX/JSX (zero regex false positives!)
+ * - Extracts both File-level imports AND Function/Component-level symbols + call targets
+ * - Reuses SHA-256 cached entries (and embeddings!) when files have not changed
  */
 export function buildOrUpdateRepoIndex(
   rootDir: string,
@@ -412,7 +386,7 @@ export function buildOrUpdateRepoIndex(
   if (fs.existsSync(cachePath)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(cachePath, 'utf8')) as RepoIndex;
-      if (parsed.schemaVersion === '1.0' && parsed.files) {
+      if (parsed.schemaVersion === '2.0' && parsed.files) {
         prevFiles = parsed.files;
       }
     } catch {
@@ -427,6 +401,7 @@ export function buildOrUpdateRepoIndex(
   const nextFiles: Record<string, IndexedFileNode> = {};
   let reindexedFiles = 0;
   let cachedFiles = 0;
+  let totalSymbols = 0;
 
   for (const relPath of allFiles) {
     const fullPath = path.join(absRoot, relPath);
@@ -435,18 +410,19 @@ export function buildOrUpdateRepoIndex(
     const cached = prevFiles[relPath];
 
     if (cached && cached.hash === hash) {
-      // Re-resolve imports only if file list changed, but keep expensive fields & embeddings cached
       nextFiles[relPath] = cached;
       cachedFiles++;
+      totalSymbols += cached.symbols?.length ?? 0;
       continue;
     }
 
-    const rawImports = extractImports(content);
-    const exports = extractExports(content);
+    const ext = path.posix.extname(relPath);
+    const parsedAst = parseSourceFileAST(relPath, ext, content);
+
     const resolvedSet = new Set<string>();
     const externalSet = new Set<string>();
 
-    for (const spec of rawImports) {
+    for (const spec of parsedAst.imports) {
       const resolved = resolveImportToRepoFile(relPath, spec, allFileSet, workspacePkgMap);
       if (resolved.internal && resolved.internal !== relPath) {
         resolvedSet.add(resolved.internal);
@@ -455,35 +431,43 @@ export function buildOrUpdateRepoIndex(
       }
     }
 
-    const { layer, roleLabel, summary } = inferLayerAndRole(relPath, exports, content);
-    const keywords = extractKeywords(relPath, exports, summary);
+    const { layer, roleLabel, summary } = inferLayerAndRole(
+      relPath,
+      parsedAst.exports,
+      parsedAst.leadingDoc
+    );
+    const keywords = extractKeywords(relPath, parsedAst.exports, parsedAst.symbols, summary);
 
     nextFiles[relPath] = {
       path: relPath,
       name: path.posix.basename(relPath),
-      ext: path.posix.extname(relPath),
+      ext,
       hash,
       lines: content.split('\n').length,
       sizeBytes: Buffer.byteLength(content, 'utf8'),
       layer,
       roleLabel,
       summary,
-      exports,
-      rawImports,
+      exports: parsedAst.exports.slice(0, 20),
+      symbols: parsedAst.symbols,
+      rawImports: parsedAst.imports,
       resolvedImports: Array.from(resolvedSet).sort(),
       externalDeps: Array.from(externalSet).sort(),
       keywords,
+      parserUsed: parsedAst.parserUsed,
     };
     reindexedFiles++;
+    totalSymbols += parsedAst.symbols.length;
   }
 
   const index: RepoIndex = {
-    schemaVersion: '1.0',
+    schemaVersion: '2.0',
     rootDir: absRoot,
     repoName: path.basename(absRoot),
     updatedAt: new Date().toISOString(),
     stats: {
       totalFiles: allFiles.length,
+      totalSymbols,
       reindexedFiles,
       cachedFiles,
       scanMs: Math.max(1, Date.now() - startedAt),
@@ -496,7 +480,7 @@ export function buildOrUpdateRepoIndex(
       fs.mkdirSync(path.dirname(cachePath), { recursive: true });
       fs.writeFileSync(cachePath, JSON.stringify(index, null, 2), 'utf8');
     } catch {
-      // Read-only directories still work gracefully in memory
+      // ignore read-only fs
     }
   }
 
