@@ -246,24 +246,24 @@ function inferLayerAndRole(
   if (/\.(test|spec)\.[tj]sx?$/.test(lower)) {
     return {
       layer: 'test',
-      roleLabel: '自动化测试',
-      summary: `验证核心逻辑与回归用例的测试文件${topExports ? `（涉及 ${topExports}）` : ''}。`,
+      roleLabel: '测试文件',
+      summary: `用来自动检查代码有没有改坏${topExports ? `（测 ${topExports}）` : ''}。`,
     };
   }
 
   if (lower.endsWith('.css') || lower.endsWith('.scss')) {
     return {
       layer: 'style-asset',
-      roleLabel: '视觉样式表',
-      summary: `定义界面视觉风格、主题变量（深/浅色）与排版布局样式。`,
+      roleLabel: '界面样式',
+      summary: `控制界面的颜色、字体、深浅色主题和排版。`,
     };
   }
 
   if (base.includes('config') || base === 'vite.config.ts') {
     return {
       layer: 'config',
-      roleLabel: '工程构建配置',
-      summary: `控制项目构建、开发服务器或工具链运行参数。`,
+      roleLabel: '项目配置',
+      summary: `控制打包、编译和本地启动参数。`,
     };
   }
 
@@ -271,19 +271,17 @@ function inferLayerAndRole(
     return {
       layer: 'entrypoint',
       roleLabel: '启动入口',
-      summary: leadingDoc
-        ? `程序启动入口：${leadingDoc.slice(0, 90)}`
-        : `应用或命令行工具的启动入口，负责把各模块组装并运行起来。`,
+      summary: `程序启动的入口文件，负责把各个模块串起来运行。`,
     };
   }
 
   if (lower.includes('server') || lower.includes('api') || lower.includes('sidecar') || lower.includes('bridge') || lower.includes('mcp')) {
     return {
       layer: 'server-api',
-      roleLabel: lower.includes('mcp') ? 'MCP 协议桥接层' : '本地服务网关',
-      summary: leadingDoc
-        ? `${leadingDoc.slice(0, 96)}`
-        : `对外提供接口或外部 MCP 图谱通信桥接${topExports ? `，核心导出：${topExports}` : ''}。`,
+      roleLabel: lower.includes('mcp') ? '插件通信接口' : '本地后台服务',
+      summary: lower.includes('mcp')
+        ? `负责和 Antigravity、Cursor、ChatGPT 等 AI 软件对接通信。`
+        : `负责在本地接收请求并把分析结果传给界面。`,
     };
   }
 
@@ -292,20 +290,36 @@ function inferLayerAndRole(
     const isHUD = lower.includes('hud');
     return {
       layer: isApp ? 'entrypoint' : 'ui-component',
-      roleLabel: isApp ? '前端主容器' : isHUD ? '悬浮交互主视图' : '界面卡片组件',
+      roleLabel: isApp ? '主页面' : isHUD ? '悬浮窗主界面' : '界面卡片',
       summary: isApp
-        ? `前端应用的顶层页面容器，负责串联状态、数据流与界面展示。`
+        ? `前端的主页面，负责管理状态并把各个界面组件拼在一起。`
         : topExports
-        ? `负责渲染 ${topExports} 相关的交互界面与视觉呈现。`
-        : `负责前端局部 UI 渲染与用户交互。`,
+        ? `负责展示 ${topExports} 对应的页面内容和按钮交互。`
+        : `负责展示局部界面内容和点击交互。`,
     };
   }
 
   if (lower.includes('schema') || lower.includes('types')) {
     return {
       layer: 'core-logic',
-      roleLabel: '共享数据契约',
-      summary: `全项目共享的数据结构与类型协议${topExports ? `（定义 ${topExports} 等）` : ''}，改这里会影响上下游多个文件。`,
+      roleLabel: '全项目共用数据格式',
+      summary: `定义了整个项目通用的数据字段和类型，很多文件都依赖它，改动前要小心。`,
+    };
+  }
+
+  if (lower.includes('prompt')) {
+    return {
+      layer: 'core-logic',
+      roleLabel: '修复指令生成',
+      summary: `把你的选择整理成清晰、精确的指令，直接发给 AI 去改代码。`,
+    };
+  }
+
+  if (lower.includes('adapter') || lower.includes('llm')) {
+    return {
+      layer: 'core-logic',
+      roleLabel: '大模型连接器',
+      summary: `负责调用你绑定的外部或本地大模型（OpenAI / DeepSeek / Ollama）。`,
     };
   }
 
@@ -319,41 +333,33 @@ function inferLayerAndRole(
   ) {
     return {
       layer: 'core-logic',
-      roleLabel: '核心 GraphRAG 引擎',
-      summary: leadingDoc
-        ? `${leadingDoc.slice(0, 96)}`
-        : `核心 AST 解析、图谱或检索算法模块${topExports ? `，提供 ${topExports}` : ''}。`,
-    };
-  }
-
-  if (lower.includes('adapter') || lower.includes('llm') || lower.includes('prompt')) {
-    return {
-      layer: 'core-logic',
-      roleLabel: 'AI 协作适配层',
-      summary: leadingDoc
-        ? `${leadingDoc.slice(0, 96)}`
-        : `负责与大模型通信或拼装结构化指令${topExports ? `（${topExports}）` : ''}。`,
+      roleLabel: '代码分析核心',
+      summary: lower.includes('parser')
+        ? `解析代码里的函数、导出和调用关系。`
+        : lower.includes('graph')
+        ? `计算文件之间谁依赖谁，以及改动会影响哪些文件。`
+        : lower.includes('embedding')
+        ? `把代码转成可搜索的索引，方便用自然语言快速找到文件。`
+        : lower.includes('indexer')
+        ? `扫描项目目录并缓存每个文件的结构信息。`
+        : `负责分析报错信息、检测隐患并给出修改建议。`,
     };
   }
 
   if (base === 'index.ts' || base === 'index.js') {
     return {
       layer: 'core-logic',
-      roleLabel: '模块统一出口',
-      summary: topExports
-        ? `模块对外统一出口并编排主流程（导出 ${topExports}）。`
-        : `聚合导出本目录的核心能力，供外部包统一引用。`,
+      roleLabel: '目录汇总出口',
+      summary: `把当前文件夹里的功能统一汇总对外提供，方便其他模块引用。`,
     };
   }
 
   return {
     layer: 'module',
     roleLabel: '功能模块',
-    summary: leadingDoc
-      ? leadingDoc.slice(0, 96)
-      : topExports
-      ? `提供 ${topExports} 等核心实现逻辑。`
-      : `实现项目中的业务辅助功能。`,
+    summary: topExports
+      ? `提供 ${topExports} 等具体功能实现。`
+      : `实现项目中的具体业务逻辑。`,
   };
 }
 

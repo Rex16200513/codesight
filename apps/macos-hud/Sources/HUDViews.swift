@@ -481,7 +481,7 @@ struct MapTabView: View {
             SightCard(
                 icon: "exclamationmark.shield",
                 tint: .orange,
-                title: "核心枢纽（改动波及最大）",
+                title: "最关键的基础文件（改动要小心）",
                 trailingText: "\(map.totalFiles) 文件 · \(map.scanMs)ms",
                 trailingTint: .secondary
             ) {
@@ -499,7 +499,7 @@ struct MapTabView: View {
                                     .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
                                 Spacer()
-                                Text("波及 \(hub.downstreamReach)")
+                                Text("被 \(hub.downstreamReach) 处用到")
                                     .font(.system(size: 10.5, weight: .semibold))
                                     .foregroundStyle(.orange)
                             }
@@ -896,17 +896,17 @@ struct DiagnoseTabView: View {
                     .lineSpacing(4)
             }
 
-            // Card 2: Blast Radius & Safe Zone
+            // Card 2: Impact Scope & Safe Files
             if let br = report.blastRadius {
                 let (riskLabel, riskColor): (String, Color) =
-                    br.riskLevel == "high-hub" ? ("高风险核心枢纽", .red) :
-                    br.riskLevel == "medium-bridge" ? ("中游桥接节点", .orange) :
-                    ("低风险末梢节点", .green)
+                    br.riskLevel == "high-hub" ? ("改动影响较大", .red) :
+                    br.riskLevel == "medium-bridge" ? ("影响少量文件", .orange) :
+                    ("只影响这 1 个文件", .green)
 
                 SightCard(
                     icon: "circle.dashed.inset.filled",
                     tint: riskColor,
-                    title: "爆炸半径与安全区",
+                    title: "改这里会影响谁",
                     trailingText: riskLabel,
                     trailingTint: riskColor
                 ) {
@@ -915,20 +915,20 @@ struct DiagnoseTabView: View {
                             Image(systemName: "checkmark.shield.fill")
                                 .font(.system(size: 12))
                                 .foregroundStyle(.green)
-                            Text("其余 \(br.safeZoneCount) 个业务文件完全不受影响，无需去读")
+                            Text("另外 \(br.safeZoneCount) 个文件完全不受影响，不用管")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(.primary)
                         }
 
                         if !br.directImpact.isEmpty {
                             Divider().opacity(0.25)
-                            Text("直接波及：\(br.directImpact.map { $0.name }.joined(separator: "、"))")
+                            Text("直接用到它：\(br.directImpact.map { $0.name }.joined(separator: "、"))")
                                 .font(.system(size: 11.5))
                                 .foregroundStyle(.secondary)
                         }
 
                         if !report.symbolCallers.isEmpty {
-                            Text("函数调用方：\(report.symbolCallers.prefix(3).map { "\($0.callerName) (\($0.callerFile.split(separator: "/").last ?? ""))" }.joined(separator: " · "))")
+                            Text("具体调用位置：\(report.symbolCallers.prefix(3).map { "\($0.callerName) (\($0.callerFile.split(separator: "/").last ?? ""))" }.joined(separator: " · "))")
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(.secondary)
                         }

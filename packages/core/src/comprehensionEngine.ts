@@ -254,16 +254,16 @@ export interface ProblemProjectionReport {
   };
 }
 
-/** Clean, emoji-free Chinese layer titles (icons rendered natively by host SF Symbols) */
+/** Plain, jargon-free Chinese layer titles everyone understands */
 const LAYER_TITLES: Record<FileLayer, string> = {
-  entrypoint: '应用入口',
-  'core-logic': '核心引擎与契约',
-  'server-api': '服务与协议桥接',
-  'ui-component': '界面与交互组件',
-  'style-asset': '样式与主题',
-  module: '业务模块',
-  test: '自动化测试',
-  config: '工程配置',
+  entrypoint: '程序入口',
+  'core-logic': '核心逻辑与数据格式',
+  'server-api': '本地服务与插件接口',
+  'ui-component': '页面与界面组件',
+  'style-asset': '界面样式',
+  module: '功能模块',
+  test: '测试文件',
+  config: '项目配置',
 };
 
 const LAYER_ORDER: FileLayer[] = [
@@ -602,25 +602,30 @@ export async function projectProblemOntoRepo(
   let plainDiagnosis = '';
   if (primaryNode && blastRadius) {
     const impactCount = blastRadius.directImpact.length + blastRadius.indirectImpact.length;
-    const symTag = primarySymbol ? ` 的 ${primarySymbol.name}()` : '';
-    const roleDesc = `「${primaryNode.roleLabel}」(${primaryNode.name}${symTag})`;
+    const fnPart = primarySymbol ? ` 的 ${primarySymbol.name} 函数` : '';
+    const whereDesc = `${primaryNode.name}${fnPart}（负责：${primaryNode.roleLabel}）`;
+
     if (staticRes.typeMismatch) {
-      plainDiagnosis = `问题出在 ${roleDesc}：期望数据结构是 ${staticRes.typeMismatch.expected}，实际传入了 ${staticRes.typeMismatch.actual}。${
+      const isNullish = staticRes.typeMismatch.actual === 'undefined' || staticRes.typeMismatch.actual === 'null';
+      const problemPhrase = isNullish && staticRes.typeMismatch.symbol
+        ? `代码想读取 .${staticRes.typeMismatch.symbol}，但拿到的对象是空的（${staticRes.typeMismatch.actual}）`
+        : `数据类型对不上：这里需要 ${staticRes.typeMismatch.expected}，但实际传进来的是 ${staticRes.typeMismatch.actual}`;
+      plainDiagnosis = `${problemPhrase}。出错位置在 ${whereDesc}。${
         impactCount > 0
-          ? `该文件被 ${impactCount} 个上下游文件依赖，修改前建议先确认波及范围。`
-          : `它处于调用链末端（0 个其他文件依赖），可以放心局部修复。`
+          ? `注意：还有 ${impactCount} 个文件直接或间接依赖它，改之前先选好方案。`
+          : `好消息：没有其他文件依赖它，直接在这里修很安全。`
       }`;
     } else if (staticRes.silentRegressions.length > 0) {
-      plainDiagnosis = `在 ${roleDesc} 的改动中，检测到 ${staticRes.silentRegressions.length} 处静默风险（如删守卫、空 catch 或类型绕过）。表面不报错，但原有行为已被悄悄改变。`;
+      plainDiagnosis = `在 ${whereDesc} 的改动中，发现 ${staticRes.silentRegressions.length} 处隐蔽问题（比如删掉了安全检查、吞掉报错或用 any 跳过检查）。虽然程序没报错，但原本的保护逻辑被悄悄改掉了。`;
     } else if (staticRes.cleanedErrorLines.length > 0) {
-      plainDiagnosis = `报错位于 ${roleDesc}${primaryLine ? ` 第 ${primaryLine} 行` : ''}（职责：${primaryNode.summary}）。它波及 ${impactCount} 个下游文件，其余 ${blastRadius.safeZoneCount} 个文件完全不受影响。`;
+      plainDiagnosis = `报错出在 ${whereDesc}${primaryLine ? ` 第 ${primaryLine} 行` : ''}。改动它可能影响到 ${impactCount} 个文件，另外 ${blastRadius.safeZoneCount} 个文件完全不受影响。`;
     } else if (!input.rawError && !input.rawDiff) {
-      plainDiagnosis = `当前工作区没有未提交的 Git Diff 改动。你可以复制任意终端报错点击「读取剪贴板」，或修改文件后再扫描。`;
+      plainDiagnosis = `目前没有发现未提交的代码改动。你可以复制一段终端报错，或者改完代码后再来检查。`;
     } else {
-      plainDiagnosis = `最相关的核心位置是 ${roleDesc}（职责：${primaryNode.summary}）。`;
+      plainDiagnosis = `最相关的文件是 ${whereDesc}（${primaryNode.summary}）。`;
     }
   } else {
-    plainDiagnosis = '当前工作区暂无明显报错或未提交变更；请复制一段报错或修改代码后再试。';
+    plainDiagnosis = '目前没有检测到明显的报错或代码改动；你可以粘贴一段报错试试。';
   }
 
   const directions: FixDirection[] = [];
@@ -634,59 +639,59 @@ export async function projectProblemOntoRepo(
     if (blastRadius.riskLevel === 'high-hub') {
       directions.push({
         id: 'dir-protect-hub',
-        label: `守住核心枢纽 ${primaryNode.name}，隔离新改动`,
-        strategy: `保持既有接口契约不变（避免牵动下游 ${impactCount} 个文件），把新需求做成可选字段或独立适配函数。`,
+        label: `只修 ${primaryNode.name} 内部，不动其他文件`,
+        strategy: `保持它原有的输入输出不变，避免影响依赖它的 ${impactCount} 个文件，用补空值检查或新增可选字段的方式安全修复。`,
         affectedFilesCount: 1,
-        tradeoff: '风险最低，不会引发连锁报错',
+        tradeoff: '只改 1 个文件，最稳妥，不会引发连锁报错',
         recommended: true,
-        surgicalPrompt: `[CodeSight Direction: Protect Hub]\nKeep the existing exported contract of \`${primaryNode.path}\`${primarySymbol ? ` (${primarySymbol.name})` : ''} intact (it has ${impactCount} downstream dependents: ${impactListStr}). Isolate the new requirement via an additive/optional field or adapter instead of breaking existing callers. Do NOT use \`as any\` or empty \`catch\`.`,
+        surgicalPrompt: `[CodeSight Fix Plan: Minimal Safe Fix]\nKeep the existing exported signature/contract of \`${primaryNode.path}\`${primarySymbol ? ` (${primarySymbol.name})` : ''} unchanged so none of its ${impactCount} dependent files (${impactListStr}) break. Fix the error safely inside this file without using \`as any\` or empty \`catch\`.`,
       });
       directions.push({
         id: 'dir-cascade-upgrade',
-        label: `确认改核心协议，同步升级全部 ${impactCount + 1} 个文件`,
-        strategy: `修改 ${primaryNode.name} 并按依赖图同步更新所有受影响的下游调用方。`,
+        label: `连同依赖它的 ${impactCount} 个文件一起同步修改`,
+        strategy: `如果你确实要改 ${primaryNode.name} 的数据结构或参数，让 AI 按依赖关系把相关的 ${impactCount + 1} 个文件一次改齐。`,
         affectedFilesCount: impactCount + 1,
-        tradeoff: '改动面较大但架构最干净，修改后需跑全量类型检查',
-        surgicalPrompt: `[CodeSight Direction: Coordinated Hub Migration]\nUpdate \`${primaryNode.path}\`${primaryLine ? ` (line ${primaryLine})` : ''} AND synchronously update all ${impactCount} impacted downstream files (${impactListStr}). Run typecheck and tests to verify zero broken call sites.`,
+        tradeoff: '改动文件较多，改完后需要跑一遍检查确认没漏改',
+        surgicalPrompt: `[CodeSight Fix Plan: Update File + All Dependents]\nUpdate \`${primaryNode.path}\`${primaryLine ? ` (line ${primaryLine})` : ''} AND synchronously update all ${impactCount} dependent files (${impactListStr}). Run typecheck and tests afterward to make sure nothing breaks.`,
       });
     } else if (blastRadius.riskLevel === 'medium-bridge') {
       directions.push({
         id: 'dir-local-bridge-fix',
-        label: `在 ${primaryNode.name} 内部修复并核对直接调用方`,
-        strategy: `修正当前模块的问题，并同步校验直接调用它的 ${blastRadius.directImpact.map((f) => f.name).join('、')}。`,
+        label: `修复 ${primaryNode.name} 并顺手检查调用它的文件`,
+        strategy: `修好当前文件的问题，并确认直接用到它的 ${blastRadius.directImpact.map((f) => f.name).join('、')} 仍然正常。`,
         affectedFilesCount: blastRadius.directImpact.length + 1,
-        tradeoff: '改动可控，直接解决根因',
+        tradeoff: '改动范围小，直接修根因',
         recommended: true,
-        surgicalPrompt: `[CodeSight Direction: Scoped Bridge Fix]\nFix the issue in \`${primaryNode.path}\`${primaryLine ? ` around line ${primaryLine}` : ''}. Verify compatibility with its direct dependents (${blastRadius.directImpact.map((f) => f.path).join(', ')}). Keep changes minimal and avoid type escape hatches.`,
+        surgicalPrompt: `[CodeSight Fix Plan: Fix + Check Callers]\nFix the issue in \`${primaryNode.path}\`${primaryLine ? ` around line ${primaryLine}` : ''}. Verify its direct callers (${blastRadius.directImpact.map((f) => f.path).join(', ')}) continue to work properly. Keep changes minimal.`,
       });
       if (blastRadius.upstreamDependencies.length > 0) {
         directions.push({
           id: 'dir-trace-upstream',
-          label: `向上游排查（检查 ${blastRadius.upstreamDependencies[0].name} 的输出）`,
-          strategy: `先核查上游依赖 ${blastRadius.upstreamDependencies.map((f) => f.name).join('、')} 的返回结构，从源头修正契约。`,
+          label: `顺着源头查：看看 ${blastRadius.upstreamDependencies[0].name} 传的数据对不对`,
+          strategy: `不要在这里硬补丁，让 AI 先检查上游文件 ${blastRadius.upstreamDependencies.map((f) => f.name).join('、')} 是不是传错了数据。`,
           affectedFilesCount: 2,
-          tradeoff: '更治本，避免在下游打补丁',
-          surgicalPrompt: `[CodeSight Direction: Upstream Root-Cause Fix]\nInspect upstream dependencies of \`${primaryNode.path}\` (${blastRadius.upstreamDependencies.map((f) => f.path).join(', ')}) to fix the contract mismatch at its source rather than adding a fragile workaround downstream.`,
+          tradeoff: '从源头解决，避免以后再踩坑',
+          surgicalPrompt: `[CodeSight Fix Plan: Fix At Data Source]\nInspect upstream files of \`${primaryNode.path}\` (${blastRadius.upstreamDependencies.map((f) => f.path).join(', ')}) and fix the data mismatch at its source instead of patching downstream.`,
         });
       }
     } else {
       directions.push({
         id: 'dir-safe-leaf-fix',
-        label: `安心局部修复 ${primaryNode.name}（零连锁风险）`,
-        strategy: `该文件是末梢节点（0 个其他文件依赖它），让 AI 直接在当前文件内修复即可。`,
+        label: `放心直接修 ${primaryNode.name}（不会影响其他文件）`,
+        strategy: `没有其他文件依赖它，让 AI 直接在这里把问题修好即可。`,
         affectedFilesCount: 1,
-        tradeoff: '爆炸半径为 0，可以放心快速修改',
+        tradeoff: '只改这 1 个文件，零连锁风险',
         recommended: true,
-        surgicalPrompt: `[CodeSight Direction: Safe Leaf Fix]\nFix the error inside leaf file \`${primaryNode.path}\`${primaryLine ? ` near line ${primaryLine}` : ''}. No other files depend on it, so keep the fix self-contained without touching shared core modules or suppressing errors.`,
+        surgicalPrompt: `[CodeSight Fix Plan: Safe Local Fix]\nFix the error inside \`${primaryNode.path}\`${primaryLine ? ` near line ${primaryLine}` : ''}. No other files depend on it, so keep the fix self-contained and clean without suppressing errors.`,
       });
       if (blastRadius.upstreamDependencies.length > 0) {
         directions.push({
           id: 'dir-check-upstream-leaf',
-          label: `按上游最新契约同步适配本文件`,
-          strategy: `核对 ${blastRadius.upstreamDependencies.slice(0, 2).map((u) => u.name).join(' / ')} 的导出定义并同步更新本文件。`,
+          label: `按 ${blastRadius.upstreamDependencies[0].name} 的最新写法同步改这里`,
+          strategy: `如果是上游文件最近改过格式导致这里不匹配，让 AI 对照 ${blastRadius.upstreamDependencies.slice(0, 2).map((u) => u.name).join(' / ')} 更新本文件。`,
           affectedFilesCount: 1,
-          tradeoff: '保持本文件与核心模块同步',
-          surgicalPrompt: `[CodeSight Direction: Align With Upstream]\nAlign \`${primaryNode.path}\` with the latest exported types/behavior from ${blastRadius.upstreamDependencies.slice(0, 3).map((u) => `\`${u.path}\``).join(', ')}.`,
+          tradeoff: '和项目里的公共定义保持一致',
+          surgicalPrompt: `[CodeSight Fix Plan: Sync With Upstream]\nUpdate \`${primaryNode.path}\` to match the latest exported types/behavior from ${blastRadius.upstreamDependencies.slice(0, 3).map((u) => `\`${u.path}\``).join(', ')}.`,
         });
       }
     }
