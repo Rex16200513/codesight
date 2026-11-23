@@ -1,0 +1,24 @@
+{
+  "name": "@codesight/mcp-server",
+  "version": "0.5.0",
+  "type": "module",
+  "bin": {
+    "codesight-mcp": "./src/index.ts"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "start:http": "node --experimental-strip-types src/index.ts --http",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --experimental-strip-types --test src/server.test.ts"
+  },
+  "dependencies": {
+    "@glassbox/core": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.2"
+  }
+}

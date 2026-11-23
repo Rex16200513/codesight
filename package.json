@@ -1,8 +1,8 @@
 {
   "name": "codesight",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
-  "description": "CodeSight — GraphRAG Code Comprehension & Apple Floating HUD for Vibe Coding",
+  "description": "CodeSight — Universal GraphRAG Plugin (MCP Apps) & Apple Floating HUD for Vibe Coding",
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -10,14 +10,16 @@
   "scripts": {
     "cs": "node --experimental-strip-types packages/cli/src/cli.ts",
     "gb": "node --experimental-strip-types packages/cli/src/cli.ts",
+    "mcp:stdio": "npm run start --workspace=@codesight/mcp-server",
+    "mcp:http": "npm run start:http --workspace=@codesight/mcp-server",
     "hud:build": "bash apps/macos-hud/build.sh",
     "hud:open": "bash apps/macos-hud/build.sh && open apps/macos-hud/dist/CodeSight.app",
     "dev": "npm run dev --workspace=@glassbox/hud",
     "dev:sidecar": "npm run dev --workspace=@glassbox/sidecar",
     "dev:all": "node scripts/dev-all.mjs",
-    "build": "npm run build --workspace=@glassbox/core && npm run build --workspace=@glassbox/cli && npm run build --workspace=@glassbox/sidecar && npm run build --workspace=@glassbox/hud",
-    "typecheck": "npm run typecheck --workspace=@glassbox/core && npm run typecheck --workspace=@glassbox/cli && npm run typecheck --workspace=@glassbox/ui && npm run typecheck --workspace=@glassbox/sidecar && npm run typecheck --workspace=@glassbox/hud",
-    "test": "npm run test --workspace=@glassbox/core"
+    "build": "npm run build --workspace=@glassbox/core && npm run build --workspace=@codesight/mcp-server && npm run build --workspace=@glassbox/cli && npm run build --workspace=@glassbox/sidecar && npm run build --workspace=@glassbox/hud",
+    "typecheck": "npm run typecheck --workspace=@glassbox/core && npm run typecheck --workspace=@codesight/mcp-server && npm run typecheck --workspace=@glassbox/cli && npm run typecheck --workspace=@glassbox/ui && npm run typecheck --workspace=@glassbox/sidecar && npm run typecheck --workspace=@glassbox/hud",
+    "test": "npm run test --workspace=@glassbox/core && npm run test --workspace=@codesight/mcp-server"
   },
   "engines": {
     "node": ">=20.0.0"

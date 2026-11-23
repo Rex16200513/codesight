@@ -1,33 +1,47 @@
-# CodeSight — GraphRAG Code Comprehension & Apple Floating HUD for Vibe Coding
+# CodeSight — Universal GraphRAG Plugin (MCP Apps) & Apple Floating HUD for Vibe Coding
 
-> **Graph-RAG helps AI read your code. CodeSight helps *you* understand what every file does, what actually broke, and which architectural direction to fix in seconds.**
+> **Graph-RAG helps AI read your code. CodeSight plugs into Antigravity, Claude Code, Cursor, VS Code, Codex, and ChatGPT to help *you* see what every file does, what broke, and which fix direction to choose in seconds.**
 
-## Core Capabilities (`v0.4.0`)
+## Works Inside All Mainstream AI Agent Products (`v0.5.0`)
 
-1. **Native macOS Apple Floating HUD (`CodeSight.app`, ~1.3 MB)**:
-   - Pure Swift 6 + SwiftUI + AppKit (`NSPanel` `.floating` + `NSVisualEffectView.Material.hudWindow`), unified Apple SF Symbols (zero emojis), explicit card boundaries (`SightCard`), collapsible floating capsule, and explicit Close button.
-   - Connects first to the local Sidecar (`http://127.0.0.1:4317`) for ~5ms warm responses and zero repeated macOS TCC file permission prompts, with isolated CLI fallback (`GIT_CEILING_DIRECTORIES` + `GIT_CONFIG_GLOBAL=/dev/null`).
-2. **Built-in Zero-Docker GraphRAG + Pluggable Open-Source Graph-RAG MCP**:
-   - **TypeScript Compiler AST** (`astParser.ts`) + Cross-file Function/Component Call Graph.
-   - **Hybrid Retrieval (RRF)**: Exact Match + Okapi BM25 + Semantic Vector + 1-hop Graph Propagation.
-   - **External MCP Graph-RAG Bridge**: Plug in `CodeGraphContext` (`cgc mcp start`), `vitali87/code-graph-rag`, `sdsrss/code-graph-mcp`, or `Serena` via `--mcp-cmd`.
-3. **Optional BYOK Lightweight LLM Synthesis**:
-   - Works 100% locally at 0 Token cost out of the box; optionally bind OpenAI mini / DeepSeek / Gemini Flash / local Ollama so only ~600 pruned tokens are sent for deep plain-Chinese code explanations.
+| Platform | Transport & Integration | One-Command Setup |
+| :--- | :--- | :--- |
+| **Antigravity** | Native Plugin (`plugin.json` + `mcp_config.json` + `SKILL.md` + `rules/AGENTS.md`) + `ui://` MCP App cards | `npm run cs -- install --target antigravity` (add `--global` for all projects) |
+| **Claude Code** | Local Stdio MCP (`.mcp.json`) + `.claude-plugin` manifest | `npm run cs -- install --target claude-code` |
+| **Claude Desktop** | Local Stdio MCP + inline `ui://` MCP App cards | `npm run cs -- install --target claude-desktop` |
+| **Cursor** | Local Stdio MCP (`.cursor/mcp.json`) | `npm run cs -- install --target cursor` |
+| **VS Code / Copilot** | Local Stdio MCP (`.vscode/mcp.json`) | `npm run cs -- install --target vscode` |
+| **OpenAI Codex CLI** | Local Stdio MCP (`~/.codex/config.toml`) | `npm run cs -- install --target codex` |
+| **ChatGPT Apps** | Streamable HTTP MCP (`/mcp`) + interactive `ui://` cards | `npm run mcp:http` (exposes `http://127.0.0.1:4318/mcp`) |
+| **macOS Desktop HUD** | Optional 1.5MB native Swift 6 floating glass HUD (`CodeSight.app`) | `npm run dev:sidecar` + `npm run hud:open` |
 
-## Quick Start
+> Preview every config safely before writing anything:
+> ```bash
+> npm run cs -- install --target all --dry-run
+> ```
+
+## MCP Tools & Interactive Cards Exposed
+
+- `codesight_map` — Incremental AST repo comprehension map + core hub blast radius + `ui://codesight/map/latest`
+- `codesight_ask` — Hybrid GraphRAG retrieval (Exact + Okapi BM25 + Bilingual Vector + 1-hop Graph RRF, ~97% token savings)
+- `codesight_trace` — Cross-file AST function/component call graph + `ui://codesight/trace/latest`
+- `codesight_diagnose` — Error & `git diff` projection onto the live dependency graph: Plain Diagnosis, Blast Radius, Safe Zones, Silent Regression detection (removed guards, empty `catch`, `as any`), and Fix Direction cards (`ui://codesight/diagnose/latest`)
+
+## Modular Architecture
+
+```text
+packages/core        # Browser-safe schema & static analyzer + Node GraphRAG engine (AST, Call Graph, RRF, MCP GraphProvider)
+packages/mcp-server  # Dual-transport MCP + MCP Apps server (Stdio + Streamable HTTP /mcp + Apple-styled ui:// HTML cards)
+packages/cli         # CLI (`map | ask | trace | diagnose | install`)
+packages/sidecar     # Warm local HTTP/SSE bridge (zero macOS TCC popups)
+packages/ui          # Host-portable React HUD components
+plugins/codesight    # Native Antigravity & Claude Code plugin bundle (plugin.json, SKILL.md, rules/AGENTS.md)
+apps/macos-hud       # Native macOS Swift 6 / SwiftUI Always-on-Top Apple Floating HUD (CodeSight.app)
+```
+
+## Quick Verification
 
 ```bash
 npm install
-
-# 1. Start local Sidecar (recommended: ~5ms warm GraphRAG API + zero macOS TCC popups)
-npm run dev:sidecar
-
-# 2. Build & launch native macOS Floating HUD (CodeSight.app)
-npm run hud:open
-
-# 3. Or run CLI directly on any local project
-npm run cs -- map /path/to/project
-npm run cs -- ask "修复提示词 prompt 是怎么拼装出来的"
-npm run cs -- trace buildSurgicalFixPrompt
-npm run cs -- diagnose --git /path/to/project
+npm run typecheck && npm test && npm run build
 ```

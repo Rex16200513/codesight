@@ -9,6 +9,7 @@ import {
   traceSymbol,
   type McpGraphProviderConfig,
 } from '@glassbox/core/engine';
+import { installCodeSightPlugin, type AgentTarget } from './installer.ts';
 
 const C = {
   reset: '\x1b[0m',
@@ -79,6 +80,9 @@ ${C.bold}CodeSight GraphRAG Engine CLI${C.reset} ${C.dim}— AST 函数调用图
 
   ${C.cyan}npm run cs -- diagnose --error "<报错文本>" [目录]${C.reset}
       把真实报错或 --git diff 投影到依赖图上：人话原因 + 函数调用链 + 爆炸半径 + 给 AI 的修改方向
+
+  ${C.cyan}npm run cs -- install --target <antigravity|claude-code|claude-desktop|cursor|vscode|codex|chatgpt|all>${C.reset}
+      一键将 CodeSight MCP App + Skill 插件安装到主流 AI Agent 软件（支持 --global / --dry-run）
 
 可选参数:
   --mcp-cmd "<命令>"  挂载外部开源 Graph-RAG MCP（如 "cgc mcp start" / code-graph-rag / Serena）
@@ -238,6 +242,43 @@ async function main() {
     });
     return;
   }
+  if (command === 'install') {
+    const rawTarget = (typeof flags.target === 'string' ? flags.target : positional[0]) || 'all';
+    const validTargets: AgentTarget[] = [
+      'antigravity',
+      'claude-code',
+      'claude-desktop',
+      'cursor',
+      'vscode',
+      'codex',
+      'chatgpt',
+      'all',
+    ];
+    const target = (validTargets.includes(rawTarget as AgentTarget) ? rawTarget : 'all') as AgentTarget;
+    const projectDir = typeof flags.dir === 'string' ? flags.dir : process.cwd();
+    const dryRun = Boolean(flags['dry-run']);
+    const global = Boolean(flags.global);
+
+    const items = installCodeSightPlugin({ target, projectDir, global, dryRun });
+    if (asJson) {
+      console.log(JSON.stringify({ dryRun, global, items }, null, 2));
+      return;
+    }
+
+    console.log(
+      `\n${C.bold}[CodeSight Installer]${C.reset} ${dryRun ? `${C.yellow}(Dry-Run 预览模式，未写入文件)${C.reset}` : `${C.green}已完成插件配置${C.reset}`}\n`
+    );
+    for (const item of items) {
+      console.log(`  • ${C.cyan}${item.target}${C.reset} (${item.scope}) → ${C.bold}${item.destination}${C.reset}`);
+      console.log(`    ${C.dim}${item.summary}${C.reset}`);
+      if (item.snippet) {
+        console.log(`${C.gray}${item.snippet.split('\n').map((l) => `      ${l}`).join('\n')}${C.reset}`);
+      }
+    }
+    console.log('');
+    return;
+  }
+
   printHelp();
 }
 

@@ -1,0 +1,6 @@
+{
+  "name": "codesight",
+  "version": "0.5.0",
+  "description": "GraphRAG Code Comprehension, Blast-Radius Diagnostics, and Silent Regression Catcher for Vibe Coding",
+  "repository": "https://github.com/Rex16200513/codesight"
+}
