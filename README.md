@@ -21,6 +21,7 @@ packages/core     # @glassbox/core (browser-safe schema/static analyzer)
 packages/cli      # @glassbox/cli — `map | ask | trace | diagnose [--mcp-cmd "..."] [--json]`
 packages/sidecar  # @glassbox/sidecar — local HTTP/SSE live bridge + MCP Apps (ui://) adapter
 packages/ui       # @glassbox/ui — host-portable floating HUD React components
+apps/macos-hud    # Native Swift 6 + SwiftUI/AppKit Always-on-Top Apple Floating HUD (GlassBoxHUD.app)
 apps/hud          # @glassbox/hud — standalone browser HUD preview shell
 ```
 
@@ -28,6 +29,9 @@ apps/hud          # @glassbox/hud — standalone browser HUD preview shell
 
 ```bash
 npm install
+
+# 0. Build & Launch the Native macOS Apple Floating HUD (Always-on-Top Glass NSPanel)
+npm run hud:open
 
 # 1. Build a 10-second human comprehension map of any local repo
 npm run gb -- map /path/to/your/project
