@@ -1,16 +1,17 @@
 {
-  "name": "glassbox-hud",
-  "version": "0.1.0",
+  "name": "codesight",
+  "version": "0.4.0",
   "private": true,
-  "description": "X-Ray Diagnostic HUD for Vibe Coding — turn raw AI errors & diffs into visual information-design cards",
+  "description": "CodeSight — GraphRAG Code Comprehension & Apple Floating HUD for Vibe Coding",
   "workspaces": [
     "packages/*",
     "apps/*"
   ],
   "scripts": {
+    "cs": "node --experimental-strip-types packages/cli/src/cli.ts",
     "gb": "node --experimental-strip-types packages/cli/src/cli.ts",
     "hud:build": "bash apps/macos-hud/build.sh",
-    "hud:open": "bash apps/macos-hud/build.sh && open apps/macos-hud/dist/GlassBoxHUD.app",
+    "hud:open": "bash apps/macos-hud/build.sh && open apps/macos-hud/dist/CodeSight.app",
     "dev": "npm run dev --workspace=@glassbox/hud",
     "dev:sidecar": "npm run dev --workspace=@glassbox/sidecar",
     "dev:all": "node scripts/dev-all.mjs",

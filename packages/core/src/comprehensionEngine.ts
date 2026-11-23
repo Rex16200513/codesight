@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ParsedSymbol } from './astParser.ts';
@@ -28,12 +29,102 @@ import {
   type IndexedFileNode,
   type RepoIndex,
 } from './repoIndexer.ts';
+import type { LLMConfig } from './schema.ts';
 import { estimateTokens, runStaticAnalysis, type StaticExtractionResult } from './staticAnalyzer.ts';
 
 /**
- * Default Zero-Docker Built-in GraphRAG Provider:
- * Real TypeScript Compiler AST + Function-Level Call Graph + BM25 & Vector RRF + SHA-256 Incremental Cache.
+ * Safe, TCC-friendly `git diff` helper:
+ * - Verifies `.git` exists directly inside `rootDir` (never traverses up to ~ or Desktop/Documents)
+ * - Disables global/system git config probing (`GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`)
+ * - Sets `GIT_CEILING_DIRECTORIES` to parent directory
  */
+export function safeGitDiff(rootDir: string): { ok: boolean; diff: string; reason?: string } {
+  const absRoot = path.resolve(rootDir);
+  if (!fs.existsSync(path.join(absRoot, '.git'))) {
+    return {
+      ok: false,
+      diff: '',
+      reason: '当前目录尚未初始化 Git 仓库（未找到 .git）',
+    };
+  }
+
+  try {
+    const diff = execFileSync('git', ['diff', '--no-ext-diff', '--no-color'], {
+      cwd: absRoot,
+      encoding: 'utf8',
+      timeout: 5000,
+      env: {
+        PATH: process.env.PATH || '/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin',
+        HOME: process.env.HOME || '',
+        GIT_CEILING_DIRECTORIES: path.dirname(absRoot),
+        GIT_CONFIG_NOSYSTEM: '1',
+        GIT_CONFIG_GLOBAL: '/dev/null',
+        GIT_TERMINAL_PROMPT: '0',
+      },
+    });
+    return { ok: true, diff };
+  } catch (err) {
+    return {
+      ok: false,
+      diff: '',
+      reason: err instanceof Error ? err.message : 'git diff 执行失败',
+    };
+  }
+}
+
+/**
+ * Optional BYOK Lightweight LLM Synthesis:
+ * Receives ONLY the GraphRAG-pruned minimal code slices (~500-900 tokens)
+ * and synthesizes a clear, business-oriented Chinese explanation.
+ */
+async function synthesizeWithBYOK(
+  systemPrompt: string,
+  userPrompt: string,
+  llmConfig?: LLMConfig
+): Promise<{ text: string; promptTokens: number; completionTokens: number } | null> {
+  if (!llmConfig?.enabled || !llmConfig.baseUrl || !llmConfig.model) {
+    return null;
+  }
+
+  const endpoint = `${llmConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (llmConfig.apiKey.trim()) {
+    headers['Authorization'] = `Bearer ${llmConfig.apiKey.trim()}`;
+  }
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: llmConfig.model,
+      temperature: 0.2,
+      max_tokens: 420,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`LLM HTTP ${res.status}`);
+  }
+
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
+
+  const text = data.choices?.[0]?.message?.content?.trim();
+  if (!text) return null;
+
+  return {
+    text,
+    promptTokens: data.usage?.prompt_tokens ?? estimateTokens(userPrompt),
+    completionTokens: data.usage?.completion_tokens ?? estimateTokens(text),
+  };
+}
+
 export class BuiltInAstGraphProvider implements GraphProvider {
   readonly name = 'builtin-ast-graphrag';
 
@@ -48,7 +139,8 @@ export class BuiltInAstGraphProvider implements GraphProvider {
 
     if (options?.persistCache ?? true) {
       try {
-        const cachePath = path.join(index.rootDir, '.glassbox', 'index.json');
+        const cachePath = path.join(index.rootDir, '.codesight', 'index.json');
+        fs.mkdirSync(path.dirname(cachePath), { recursive: true });
         fs.writeFileSync(cachePath, JSON.stringify(index, null, 2), 'utf8');
       } catch {
         // ignore read-only fs
@@ -144,10 +236,9 @@ export interface ProblemProjectionReport {
     reason: string;
   };
   plainDiagnosis: string;
+  aiSummary?: string;
   blastRadius?: BlastRadiusReport;
-  /** Function-level callers of the broken symbol (AST Call Graph!) */
   symbolCallers: SymbolCallEdge[];
-  /** Optional enrichment from an external Graph-RAG MCP server (CodeGraphContext / code-graph-rag / Serena) */
   externalGraphHint?: ExternalGraphHint | null;
   retrievedContext: RetrievalHit[];
   silentRegressions: StaticExtractionResult['silentRegressions'];
@@ -158,18 +249,21 @@ export interface ProblemProjectionReport {
     savedPercent: number;
     retrievalMs: number;
     embeddingMode: string;
+    llmUsed?: boolean;
+    llmModel?: string;
   };
 }
 
+/** Clean, emoji-free Chinese layer titles (icons rendered natively by host SF Symbols) */
 const LAYER_TITLES: Record<FileLayer, string> = {
-  entrypoint: '🚪 入口层（程序怎么启动的）',
-  'core-logic': '🧠 核心引擎与共享契约（最关键的大脑）',
-  'server-api': '🔌 服务与协议桥接（怎么对外通信）',
-  'ui-component': '🎨 界面与交互组件（用户看到的画面）',
-  'style-asset': '✨ 样式与视觉定义',
-  module: '📦 业务辅助模块',
-  test: '🧪 自动化测试',
-  config: '⚙️ 构建与工程配置',
+  entrypoint: '应用入口',
+  'core-logic': '核心引擎与契约',
+  'server-api': '服务与协议桥接',
+  'ui-component': '界面与交互组件',
+  'style-asset': '样式与主题',
+  module: '业务模块',
+  test: '自动化测试',
+  config: '工程配置',
 };
 
 const LAYER_ORDER: FileLayer[] = [
@@ -292,9 +386,6 @@ export async function generateRepoMap(
   };
 }
 
-/**
- * Trace any Function, Component, Class, or Type across the real repository AST Call Graph!
- */
 export async function traceSymbol(
   rootDir: string,
   symbolQuery: string,
@@ -338,12 +429,16 @@ export async function askRepository(
   options?: {
     topK?: number;
     embeddingConfig?: EmbeddingProviderConfig;
+    llmConfig?: LLMConfig;
     provider?: GraphProvider;
     mcpConfig?: McpGraphProviderConfig;
   }
 ): Promise<{
   repoName: string;
   question: string;
+  aiAnswer?: string;
+  llmUsed: boolean;
+  llmModel?: string;
   hits: RetrievalHit[];
   primaryBlastRadius?: BlastRadiusReport;
   retrievalMs: number;
@@ -372,18 +467,49 @@ export async function askRepository(
     (sum, f) => sum + Math.ceil(f.sizeBytes / 3.8),
     0
   );
-  const retrievedSliceTokens = hits.reduce(
-    (sum, h) => sum + estimateTokens(readCodeSlice(index.rootDir, h.file.path)),
-    0
-  );
+
+  const topSlices = hits.slice(0, 3).map((h) => ({
+    path: h.file.path,
+    role: h.file.roleLabel,
+    slice: readCodeSlice(index.rootDir, h.file.path),
+  }));
+
+  const retrievedSliceTokens = topSlices.reduce((sum, s) => sum + estimateTokens(s.slice), 0);
   const savedPercent =
     wholeRepoTokens > 0
       ? Math.max(0, Number((((wholeRepoTokens - retrievedSliceTokens) / wholeRepoTokens) * 100).toFixed(1)))
       : 0;
 
+  let aiAnswer: string | undefined;
+  let llmUsed = false;
+  if (options?.llmConfig?.enabled && topSlices.length > 0) {
+    try {
+      const prompt = [
+        `用户问题：${question}`,
+        `已通过本地 GraphRAG 精准剪枝出最相关的 ${topSlices.length} 个代码切片：`,
+        ...topSlices.map((s) => `### ${s.path} (${s.role})\n${s.slice}`),
+      ].join('\n\n');
+
+      const synth = await synthesizeWithBYOK(
+        '你是 CodeSight 代码理解助手。请用极简、清晰、像资深同事面授一样的中文（不超过 160 字），直接回答用户的问题：逻辑在哪个文件、怎么流转、修改时需要注意什么。不要输出 Markdown 标题，不要使用 Emoji。',
+        prompt,
+        options.llmConfig
+      );
+      if (synth) {
+        aiAnswer = synth.text;
+        llmUsed = true;
+      }
+    } catch {
+      // Graceful fallback to local-only retrieval
+    }
+  }
+
   return {
     repoName: index.repoName,
     question,
+    aiAnswer,
+    llmUsed,
+    llmModel: llmUsed ? options?.llmConfig?.model : undefined,
     hits,
     primaryBlastRadius,
     retrievalMs: Math.max(1, Date.now() - startedAt),
@@ -399,6 +525,7 @@ export async function projectProblemOntoRepo(
   input: { rawError?: string; rawDiff?: string; question?: string },
   options?: {
     embeddingConfig?: EmbeddingProviderConfig;
+    llmConfig?: LLMConfig;
     provider?: GraphProvider;
     mcpConfig?: McpGraphProviderConfig;
   }
@@ -451,12 +578,10 @@ export async function projectProblemOntoRepo(
   const primarySymbol = primaryNode ? findSymbolAtLine(primaryNode, primaryLine) : undefined;
   const blastRadius = primaryPath ? computeBlastRadius(index, graph, primaryPath) ?? undefined : undefined;
 
-  // Function-level callers from AST Call Graph!
   let symbolCallers: SymbolCallEdge[] = [];
   if (primarySymbol) {
     symbolCallers = callGraph.incoming[primarySymbol.id] ?? [];
   } else if (primaryNode) {
-    // Aggregate top cross-file callers to any exported symbol in this file
     const allIncoming: SymbolCallEdge[] = [];
     for (const sym of primaryNode.symbols ?? []) {
       for (const edge of callGraph.incoming[sym.id] ?? []) {
@@ -466,7 +591,6 @@ export async function projectProblemOntoRepo(
     symbolCallers = allIncoming.slice(0, 6);
   }
 
-  // Optional external Graph-RAG MCP enrichment
   const externalGraphHint = provider.queryExternalContext
     ? await provider.queryExternalContext(
         rootDir,
@@ -478,27 +602,29 @@ export async function projectProblemOntoRepo(
   let plainDiagnosis = '';
   if (primaryNode && blastRadius) {
     const impactCount = blastRadius.directImpact.length + blastRadius.indirectImpact.length;
-    const symTag = primarySymbol ? ` 的 \`${primarySymbol.name}()\`` : '';
-    const roleDesc = `「${primaryNode.roleLabel}」(${primaryNode.path}${symTag})`;
+    const symTag = primarySymbol ? ` 的 ${primarySymbol.name}()` : '';
+    const roleDesc = `「${primaryNode.roleLabel}」(${primaryNode.name}${symTag})`;
     if (staticRes.typeMismatch) {
-      plainDiagnosis = `问题出在 ${roleDesc}：它期望的数据形状是 \`${staticRes.typeMismatch.expected}\`，但实际收到了 \`${staticRes.typeMismatch.actual}\`。${
+      plainDiagnosis = `问题出在 ${roleDesc}：期望数据结构是 ${staticRes.typeMismatch.expected}，实际传入了 ${staticRes.typeMismatch.actual}。${
         impactCount > 0
-          ? `因为它是被 ${impactCount} 个上下游文件依赖的节点，修改它前需要先确认波及面。`
-          : `好消息是它处于调用链末端（0 个其他文件依赖它），可以放心局部修复。`
+          ? `该文件被 ${impactCount} 个上下游文件依赖，修改前建议先确认波及范围。`
+          : `它处于调用链末端（0 个其他文件依赖），可以放心局部修复。`
       }`;
     } else if (staticRes.silentRegressions.length > 0) {
-      plainDiagnosis = `在 ${roleDesc} 的代码变更中，静态规则拦截到 ${staticRes.silentRegressions.length} 处静默风险（如删守卫、空 catch 或类型绕过）。表面上可能不报错，但已经改变了原有安全/业务行为。`;
+      plainDiagnosis = `在 ${roleDesc} 的改动中，检测到 ${staticRes.silentRegressions.length} 处静默风险（如删守卫、空 catch 或类型绕过）。表面不报错，但原有行为已被悄悄改变。`;
     } else if (staticRes.cleanedErrorLines.length > 0) {
-      plainDiagnosis = `报错锚定在 ${roleDesc}${primaryLine ? ` 第 ${primaryLine} 行` : ''}（职责：${primaryNode.summary}）。它依赖 ${blastRadius.upstreamDependencies.length} 个内部文件，影响下游 ${impactCount} 个文件；其余 ${blastRadius.safeZoneCount} 个文件完全不受波及。`;
+      plainDiagnosis = `报错位于 ${roleDesc}${primaryLine ? ` 第 ${primaryLine} 行` : ''}（职责：${primaryNode.summary}）。它波及 ${impactCount} 个下游文件，其余 ${blastRadius.safeZoneCount} 个文件完全不受影响。`;
+    } else if (!input.rawError && !input.rawDiff) {
+      plainDiagnosis = `当前工作区没有未提交的 Git Diff 改动。你可以复制任意终端报错点击「读取剪贴板」，或修改文件后再扫描。`;
     } else {
-      plainDiagnosis = `通过 GraphRAG（BM25 + 向量 + 依赖图 RRF）混合检索，最相关的核心位置是 ${roleDesc}（职责：${primaryNode.summary}）。`;
+      plainDiagnosis = `最相关的核心位置是 ${roleDesc}（职责：${primaryNode.summary}）。`;
     }
   } else {
-    plainDiagnosis = '暂未在当前仓库内匹配到具体源文件，建议提供包含文件名、符号名或具体报错信息的片段。';
+    plainDiagnosis = '当前工作区暂无明显报错或未提交变更；请复制一段报错或修改代码后再试。';
   }
 
   const directions: FixDirection[] = [];
-  if (primaryNode && blastRadius) {
+  if (primaryNode && blastRadius && (input.rawError || input.rawDiff)) {
     const impactCount = blastRadius.directImpact.length + blastRadius.indirectImpact.length;
     const impactListStr = [...blastRadius.directImpact, ...blastRadius.indirectImpact]
       .slice(0, 4)
@@ -508,59 +634,59 @@ export async function projectProblemOntoRepo(
     if (blastRadius.riskLevel === 'high-hub') {
       directions.push({
         id: 'dir-protect-hub',
-        label: `方向 A：守住核心枢纽 ${primaryNode.name} 的既有接口，隔离新改动`,
-        strategy: `${primaryNode.name} 是高扇入枢纽（波及 ${impactCount} 个文件），保持它原有对外契约不变，把新需求做成可选字段或独立适配函数。`,
+        label: `守住核心枢纽 ${primaryNode.name}，隔离新改动`,
+        strategy: `保持既有接口契约不变（避免牵动下游 ${impactCount} 个文件），把新需求做成可选字段或独立适配函数。`,
         affectedFilesCount: 1,
-        tradeoff: '风险最低、10 秒止血，不会引发连锁报错',
+        tradeoff: '风险最低，不会引发连锁报错',
         recommended: true,
-        surgicalPrompt: `[GlassBox Direction: Protect Hub]\nKeep the existing exported contract of \`${primaryNode.path}\`${primarySymbol ? ` (${primarySymbol.name})` : ''} intact (it has ${impactCount} downstream dependents: ${impactListStr}). Isolate the new requirement via an additive/optional field or adapter instead of breaking existing callers. Do NOT use \`as any\` or empty \`catch\`.`,
+        surgicalPrompt: `[CodeSight Direction: Protect Hub]\nKeep the existing exported contract of \`${primaryNode.path}\`${primarySymbol ? ` (${primarySymbol.name})` : ''} intact (it has ${impactCount} downstream dependents: ${impactListStr}). Isolate the new requirement via an additive/optional field or adapter instead of breaking existing callers. Do NOT use \`as any\` or empty \`catch\`.`,
       });
       directions.push({
         id: 'dir-cascade-upgrade',
-        label: `方向 B：确认要改核心协议，让 AI 一次性同步升级全部 ${impactCount + 1} 个文件`,
-        strategy: `修改 ${primaryNode.path} 的同时，明确要求 AI 按依赖图逐一更新：${impactListStr || '全部下游调用方'}。`,
+        label: `确认改核心协议，同步升级全部 ${impactCount + 1} 个文件`,
+        strategy: `修改 ${primaryNode.name} 并按依赖图同步更新所有受影响的下游调用方。`,
         affectedFilesCount: impactCount + 1,
-        tradeoff: '改动面较大，但架构长期最干净；必须跑全量 typecheck 验证',
-        surgicalPrompt: `[GlassBox Direction: Coordinated Hub Migration]\nUpdate \`${primaryNode.path}\`${primaryLine ? ` (line ${primaryLine})` : ''} AND synchronously update all ${impactCount} impacted downstream files (${impactListStr}). Run typecheck and tests to verify zero broken call sites.`,
+        tradeoff: '改动面较大但架构最干净，修改后需跑全量类型检查',
+        surgicalPrompt: `[CodeSight Direction: Coordinated Hub Migration]\nUpdate \`${primaryNode.path}\`${primaryLine ? ` (line ${primaryLine})` : ''} AND synchronously update all ${impactCount} impacted downstream files (${impactListStr}). Run typecheck and tests to verify zero broken call sites.`,
       });
     } else if (blastRadius.riskLevel === 'medium-bridge') {
       directions.push({
         id: 'dir-local-bridge-fix',
-        label: `方向 A：在 ${primaryNode.name} 内部修复并校验直接调用方（共 ${blastRadius.directImpact.length + 1} 个文件）`,
-        strategy: `修正当前模块的逻辑/契约冲突，并顺手核对直接调用它的 ${blastRadius.directImpact.map((f) => f.name).join('、')}。`,
+        label: `在 ${primaryNode.name} 内部修复并核对直接调用方`,
+        strategy: `修正当前模块的问题，并同步校验直接调用它的 ${blastRadius.directImpact.map((f) => f.name).join('、')}。`,
         affectedFilesCount: blastRadius.directImpact.length + 1,
         tradeoff: '改动可控，直接解决根因',
         recommended: true,
-        surgicalPrompt: `[GlassBox Direction: Scoped Bridge Fix]\nFix the issue in \`${primaryNode.path}\`${primaryLine ? ` around line ${primaryLine}` : ''}. Verify compatibility with its direct dependents (${blastRadius.directImpact.map((f) => f.path).join(', ')}). Keep changes minimal and avoid type escape hatches.`,
+        surgicalPrompt: `[CodeSight Direction: Scoped Bridge Fix]\nFix the issue in \`${primaryNode.path}\`${primaryLine ? ` around line ${primaryLine}` : ''}. Verify compatibility with its direct dependents (${blastRadius.directImpact.map((f) => f.path).join(', ')}). Keep changes minimal and avoid type escape hatches.`,
       });
       if (blastRadius.upstreamDependencies.length > 0) {
         directions.push({
           id: 'dir-trace-upstream',
-          label: `方向 B：向上游源头排查（检查 ${blastRadius.upstreamDependencies[0].name} 的输出）`,
-          strategy: `不要在 ${primaryNode.name} 打补丁，让 AI 先检查上游依赖 ${blastRadius.upstreamDependencies.map((f) => f.name).join('、')} 是否输出了不符合预期的数据。`,
+          label: `向上游排查（检查 ${blastRadius.upstreamDependencies[0].name} 的输出）`,
+          strategy: `先核查上游依赖 ${blastRadius.upstreamDependencies.map((f) => f.name).join('、')} 的返回结构，从源头修正契约。`,
           affectedFilesCount: 2,
-          tradeoff: '更治本，适合“上游刚被 AI 改过导致这里接不住”的情况',
-          surgicalPrompt: `[GlassBox Direction: Upstream Root-Cause Fix]\nInspect upstream dependencies of \`${primaryNode.path}\` (${blastRadius.upstreamDependencies.map((f) => f.path).join(', ')}) to fix the contract mismatch at its source rather than adding a fragile workaround downstream.`,
+          tradeoff: '更治本，避免在下游打补丁',
+          surgicalPrompt: `[CodeSight Direction: Upstream Root-Cause Fix]\nInspect upstream dependencies of \`${primaryNode.path}\` (${blastRadius.upstreamDependencies.map((f) => f.path).join(', ')}) to fix the contract mismatch at its source rather than adding a fragile workaround downstream.`,
         });
       }
     } else {
       directions.push({
         id: 'dir-safe-leaf-fix',
-        label: `方向 A：安心局部修复 ${primaryNode.name}（零连锁风险）`,
-        strategy: `该文件是末梢节点（0 个其他文件依赖它），让 AI 直接在当前文件内修复即可，不会弄坏其他模块。`,
+        label: `安心局部修复 ${primaryNode.name}（零连锁风险）`,
+        strategy: `该文件是末梢节点（0 个其他文件依赖它），让 AI 直接在当前文件内修复即可。`,
         affectedFilesCount: 1,
         tradeoff: '爆炸半径为 0，可以放心快速修改',
         recommended: true,
-        surgicalPrompt: `[GlassBox Direction: Safe Leaf Fix]\nFix the error inside leaf file \`${primaryNode.path}\`${primaryLine ? ` near line ${primaryLine}` : ''}. No other files depend on it, so keep the fix self-contained without touching shared core modules or suppressing errors.`,
+        surgicalPrompt: `[CodeSight Direction: Safe Leaf Fix]\nFix the error inside leaf file \`${primaryNode.path}\`${primaryLine ? ` near line ${primaryLine}` : ''}. No other files depend on it, so keep the fix self-contained without touching shared core modules or suppressing errors.`,
       });
       if (blastRadius.upstreamDependencies.length > 0) {
         directions.push({
           id: 'dir-check-upstream-leaf',
-          label: `方向 B：确认上游依赖契约（${blastRadius.upstreamDependencies.slice(0, 2).map((u) => u.name).join(' / ')}）`,
-          strategy: `如果这里报错是因为上游数据格式变了，让 AI 按上游最新契约同步适配本文件。`,
+          label: `按上游最新契约同步适配本文件`,
+          strategy: `核对 ${blastRadius.upstreamDependencies.slice(0, 2).map((u) => u.name).join(' / ')} 的导出定义并同步更新本文件。`,
           affectedFilesCount: 1,
           tradeoff: '保持本文件与核心模块同步',
-          surgicalPrompt: `[GlassBox Direction: Align With Upstream]\nAlign \`${primaryNode.path}\` with the latest exported types/behavior from ${blastRadius.upstreamDependencies.slice(0, 3).map((u) => `\`${u.path}\``).join(', ')}.`,
+          surgicalPrompt: `[CodeSight Direction: Align With Upstream]\nAlign \`${primaryNode.path}\` with the latest exported types/behavior from ${blastRadius.upstreamDependencies.slice(0, 3).map((u) => `\`${u.path}\``).join(', ')}.`,
         });
       }
     }
@@ -570,11 +696,12 @@ export async function projectProblemOntoRepo(
     (sum, f) => sum + Math.ceil(f.sizeBytes / 3.8),
     0
   );
+  const sliceTexts = retrievedContext
+    .slice(0, 3)
+    .map((h, i) => `### ${h.file.path}\n${readCodeSlice(index.rootDir, h.file.path, i === 0 ? primaryLine : undefined)}`);
   const retrievedSliceTokens =
-    retrievedContext.slice(0, 3).reduce(
-      (sum, h, i) => sum + estimateTokens(readCodeSlice(index.rootDir, h.file.path, i === 0 ? primaryLine : undefined)),
-      0
-    ) + estimateTokens(staticRes.cleanedErrorLines.slice(0, 8).join('\n'));
+    sliceTexts.reduce((sum, s) => sum + estimateTokens(s), 0) +
+    estimateTokens(staticRes.cleanedErrorLines.slice(0, 8).join('\n'));
 
   const savedPercent =
     wholeRepoTokens > 0
@@ -586,6 +713,24 @@ export async function projectProblemOntoRepo(
           )
         )
       : 0;
+
+  let aiSummary: string | undefined;
+  let llmUsed = false;
+  if (options?.llmConfig?.enabled && (input.rawError || input.rawDiff)) {
+    try {
+      const synth = await synthesizeWithBYOK(
+        '你是 CodeSight 代码排错专家。用 2~3 句克制、准确的中文讲清楚：为什么会出这个错、影响是什么、最推荐怎么修。不要用 Emoji 或 Markdown 标题。',
+        `原始报错/变更摘要：\n${staticRes.prunedContextForLLM}\n\nGraphRAG 精准代码切片：\n${sliceTexts.join('\n\n')}`,
+        options.llmConfig
+      );
+      if (synth) {
+        aiSummary = synth.text;
+        llmUsed = true;
+      }
+    } catch {
+      // fallback smoothly
+    }
+  }
 
   return {
     repoName: index.repoName,
@@ -603,6 +748,7 @@ export async function projectProblemOntoRepo(
         }
       : undefined,
     plainDiagnosis,
+    aiSummary,
     blastRadius,
     symbolCallers,
     externalGraphHint,
@@ -615,6 +761,8 @@ export async function projectProblemOntoRepo(
       savedPercent,
       retrievalMs: Math.max(1, Date.now() - startedAt),
       embeddingMode: map.embeddingMode,
+      llmUsed,
+      llmModel: llmUsed ? options?.llmConfig?.model : undefined,
     },
   };
 }

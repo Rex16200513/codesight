@@ -64,6 +64,7 @@ const IGNORED_DIRS = new Set([
   'node_modules',
   '.git',
   '.glassbox',
+  '.codesight',
   'dist',
   'build',
   '.next',
@@ -379,13 +380,19 @@ export function buildOrUpdateRepoIndex(
 ): RepoIndex {
   const startedAt = Date.now();
   const absRoot = path.resolve(rootDir);
-  const cachePath = path.join(absRoot, '.glassbox', 'index.json');
+  const cachePath = path.join(absRoot, '.codesight', 'index.json');
+  const legacyCachePath = path.join(absRoot, '.glassbox', 'index.json');
   const persistCache = options?.persistCache ?? true;
 
   let prevFiles: Record<string, IndexedFileNode> = {};
-  if (fs.existsSync(cachePath)) {
+  const existingCache = fs.existsSync(cachePath)
+    ? cachePath
+    : fs.existsSync(legacyCachePath)
+    ? legacyCachePath
+    : null;
+  if (existingCache) {
     try {
-      const parsed = JSON.parse(fs.readFileSync(cachePath, 'utf8')) as RepoIndex;
+      const parsed = JSON.parse(fs.readFileSync(existingCache, 'utf8')) as RepoIndex;
       if (parsed.schemaVersion === '2.0' && parsed.files) {
         prevFiles = parsed.files;
       }

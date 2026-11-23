@@ -1,6 +1,22 @@
 import Foundation
 
-// MARK: - Repo Map (`glassbox map --json`)
+// MARK: - BYOK LLM Config (Persisted in UserDefaults)
+
+struct BYOKLLMConfig: Codable, Sendable, Equatable {
+    var enabled: Bool
+    var baseUrl: String
+    var apiKey: String
+    var model: String
+
+    static let `default` = BYOKLLMConfig(
+        enabled: false,
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "",
+        model: "gpt-4o-mini"
+    )
+}
+
+// MARK: - Repo Map (`map`)
 
 struct RepoMapDTO: Codable, Sendable {
     let repoName: String
@@ -45,11 +61,14 @@ struct MapFileDTO: Codable, Sendable, Identifiable {
     let symbolCount: Int
 }
 
-// MARK: - Ask (`glassbox ask --json`)
+// MARK: - Ask (`ask`)
 
 struct AskResultDTO: Codable, Sendable {
     let repoName: String
     let question: String
+    let aiAnswer: String?
+    let llmUsed: Bool?
+    let llmModel: String?
     let hits: [RetrievalHitDTO]
     let primaryBlastRadius: BlastRadiusDTO?
     let retrievalMs: Int
@@ -79,7 +98,7 @@ struct IndexedFileDTO: Codable, Sendable, Identifiable {
     let exports: [String]
 }
 
-// MARK: - Trace (`glassbox trace --json`)
+// MARK: - Trace (`trace`)
 
 struct SymbolTraceDTO: Codable, Sendable {
     let repoName: String
@@ -119,7 +138,7 @@ struct SymbolCallEdgeDTO: Codable, Sendable, Identifiable {
     let calleeLine: Int
 }
 
-// MARK: - Diagnose (`glassbox diagnose --json`)
+// MARK: - Diagnose (`diagnose`)
 
 struct DiagnoseReportDTO: Codable, Sendable {
     let repoName: String
@@ -128,6 +147,7 @@ struct DiagnoseReportDTO: Codable, Sendable {
     let querySummary: String
     let primaryTarget: PrimaryTargetDTO?
     let plainDiagnosis: String
+    let aiSummary: String?
     let blastRadius: BlastRadiusDTO?
     let symbolCallers: [SymbolCallEdgeDTO]
     let silentRegressions: [SilentRegressionDTO]
@@ -178,4 +198,6 @@ struct TokenEconomyDTO: Codable, Sendable {
     let savedPercent: Double
     let retrievalMs: Int
     let embeddingMode: String
+    let llmUsed: Bool?
+    let llmModel: String?
 }

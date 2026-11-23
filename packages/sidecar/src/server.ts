@@ -1,6 +1,4 @@
-import { execFile } from 'node:child_process';
 import http, { type IncomingMessage, type ServerResponse } from 'node:http';
-import { promisify } from 'node:util';
 import {
   DEMO_SCENARIOS,
   analyzeDiagnostic,
@@ -8,9 +6,14 @@ import {
   type DiagnosticBundle,
   type LLMConfig,
 } from '@glassbox/core';
+import {
+  askRepository,
+  generateRepoMap,
+  projectProblemOntoRepo,
+  safeGitDiff,
+  traceSymbol,
+} from '@glassbox/core/engine';
 import { toMCPAppResource } from './mcpBridge.ts';
-
-const execFileAsync = promisify(execFile);
 
 export interface SidecarOptions {
   port?: number;
@@ -36,7 +39,7 @@ async function readBody(req: IncomingMessage): Promise<string> {
 }
 
 export function startSidecarServer(options: SidecarOptions = {}) {
-  const port = options.port ?? Number(process.env.GLASSBOX_PORT || 4317);
+  const port = options.port ?? Number(process.env.CODESIGHT_PORT || process.env.GLASSBOX_PORT || 4317);
   const host = options.host ?? '127.0.0.1';
 
   const sseClients = new Set<ServerResponse>();
@@ -66,8 +69,8 @@ export function startSidecarServer(options: SidecarOptions = {}) {
     if (req.method === 'GET' && url.pathname === '/api/health') {
       sendJson(res, 200, {
         ok: true,
-        service: '@glassbox/sidecar',
-        schemaVersion: '1.0',
+        service: 'codesight-sidecar',
+        schemaVersion: '2.0',
         connectedHudClients: sseClients.size,
       });
       return;
@@ -82,11 +85,81 @@ export function startSidecarServer(options: SidecarOptions = {}) {
       });
       res.write(`event: connected\ndata: ${JSON.stringify({ ok: true })}\n\n`);
       sseClients.add(res);
-      req.on('close', () => {
-        sseClients.delete(res);
-      });
+      req.on('close', () => sseClients.delete(res));
       return;
     }
+
+    // --- GraphRAG Native HUD Endpoints (Zero TCC prompts, ~5ms warm latency) ---
+
+    if (req.method === 'POST' && url.pathname === '/api/map') {
+      try {
+        const body = JSON.parse((await readBody(req)) || '{}') as { repoDir?: string };
+        const { map } = await generateRepoMap(body.repoDir || process.cwd());
+        sendJson(res, 200, map);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : 'map failed' });
+      }
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/ask') {
+      try {
+        const body = JSON.parse((await readBody(req)) || '{}') as {
+          repoDir?: string;
+          question?: string;
+          llmConfig?: LLMConfig;
+        };
+        const result = await askRepository(body.repoDir || process.cwd(), body.question || '', {
+          llmConfig: body.llmConfig,
+        });
+        sendJson(res, 200, result);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : 'ask failed' });
+      }
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/trace') {
+      try {
+        const body = JSON.parse((await readBody(req)) || '{}') as {
+          repoDir?: string;
+          symbol?: string;
+        };
+        const result = await traceSymbol(body.repoDir || process.cwd(), body.symbol || '');
+        sendJson(res, 200, result);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : 'trace failed' });
+      }
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/diagnose') {
+      try {
+        const body = JSON.parse((await readBody(req)) || '{}') as {
+          repoDir?: string;
+          rawError?: string;
+          useGit?: boolean;
+          llmConfig?: LLMConfig;
+        };
+        const dir = body.repoDir || process.cwd();
+        let rawDiff = '';
+        if (body.useGit) {
+          const gd = safeGitDiff(dir);
+          rawDiff = gd.diff;
+        }
+        const report = await projectProblemOntoRepo(
+          dir,
+          { rawError: body.rawError, rawDiff },
+          { llmConfig: body.llmConfig }
+        );
+        sendJson(res, 200, report);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : 'diagnose failed' });
+      }
+      return;
+    }
+
+    // --- Legacy / Agent Webhook / MCP Preview Endpoints ---
 
     if (req.method === 'GET' && url.pathname === '/api/latest') {
       sendJson(res, 200, latestBundle);
@@ -113,36 +186,7 @@ export function startSidecarServer(options: SidecarOptions = {}) {
         broadcastBundle(bundle);
         sendJson(res, 200, bundle);
       } catch (err) {
-        sendJson(res, 400, {
-          error: err instanceof Error ? err.message : 'Invalid JSON payload',
-        });
-      }
-      return;
-    }
-
-    if (req.method === 'POST' && url.pathname === '/api/scan-git') {
-      try {
-        const bodyText = await readBody(req);
-        const { cwd, sourceAgent, llmConfig } = JSON.parse(bodyText || '{}') as {
-          cwd?: string;
-          sourceAgent?: string;
-          llmConfig?: LLMConfig;
-        };
-        const targetDir = cwd || process.cwd();
-        const { stdout } = await execFileAsync('git', ['diff'], { cwd: targetDir });
-        const bundle = await analyzeDiagnostic(
-          {
-            rawDiff: stdout,
-            sourceAgent: sourceAgent || `Git Diff (${targetDir})`,
-          },
-          llmConfig
-        );
-        broadcastBundle(bundle);
-        sendJson(res, 200, bundle);
-      } catch (err) {
-        sendJson(res, 500, {
-          error: err instanceof Error ? err.message : 'Failed to inspect git diff',
-        });
+        sendJson(res, 400, { error: err instanceof Error ? err.message : 'Invalid JSON payload' });
       }
       return;
     }
@@ -151,10 +195,9 @@ export function startSidecarServer(options: SidecarOptions = {}) {
   });
 
   server.listen(port, host, () => {
-    console.log(`[GlassBox Sidecar] Listening on http://${host}:${port}`);
-    console.log(`  - SSE Live Stream : GET  http://${host}:${port}/api/events`);
-    console.log(`  - Ingest Any Agent: POST http://${host}:${port}/api/ingest`);
-    console.log(`  - MCP App Preview : GET  http://${host}:${port}/api/mcp-preview`);
+    console.log(`[CodeSight Sidecar] Listening on http://${host}:${port}`);
+    console.log(`  - GraphRAG API: POST /api/map | /api/ask | /api/trace | /api/diagnose`);
+    console.log(`  - SSE Stream  : GET  /api/events`);
   });
 
   return server;

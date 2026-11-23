@@ -1,7 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Native Apple NSVisualEffectView wrapper for authentic macOS frosted HUD vibrancy.
+// MARK: - Apple Native Vibrancy & Unified SF Symbol Helpers
+
 struct AppleGlassBackground: NSViewRepresentable {
     var material: NSVisualEffectView.Material = .hudWindow
     var blendingMode: NSVisualEffectView.BlendingMode = .behindWindow
@@ -21,6 +22,75 @@ struct AppleGlassBackground: NSViewRepresentable {
     }
 }
 
+private func symbolForLayer(_ layer: String) -> String {
+    switch layer {
+    case "core-logic": return "cpu"
+    case "server-api": return "network"
+    case "ui-component": return "rectangle.on.rectangle"
+    case "entrypoint": return "arrow.right.circle"
+    case "style-asset": return "paintbrush"
+    case "test": return "checkmark.seal"
+    case "config": return "gearshape"
+    default: return "shippingbox"
+    }
+}
+
+/// Crisp Apple-crafted Card Container with distinct surface separation,
+/// unified SF Symbol squircle icon well, explicit identity title, and subtle elevation.
+struct SightCard<Content: View>: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    var trailingText: String? = nil
+    var trailingTint: Color = .secondary
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 9) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(tint.opacity(0.14))
+                        .frame(width: 24, height: 24)
+                    Image(systemName: icon)
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(tint)
+                }
+
+                Text(title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                if let trailing = trailingText {
+                    Text(trailing)
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(trailingTint)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2.5)
+                        .background(trailingTint.opacity(0.11), in: Capsule())
+                }
+            }
+
+            content()
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.68))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.75)
+        )
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 2)
+    }
+}
+
+// MARK: - Root Switcher
+
 struct HUDRootView: View {
     @ObservedObject var vm: HUDViewModel
 
@@ -32,62 +102,69 @@ struct HUDRootView: View {
                 ExpandedHUDView(vm: vm)
             }
         }
-        .animation(.spring(response: 0.32, dampingFraction: 0.84), value: vm.isCollapsed)
+        .animation(.spring(response: 0.3, dampingFraction: 0.86), value: vm.isCollapsed)
     }
 }
 
-// MARK: - Collapsed Dynamic-Island Floating Pill
+// MARK: - Collapsed Floating Capsule
 
 struct CollapsedPillView: View {
     @ObservedObject var vm: HUDViewModel
 
     var body: some View {
-        Button {
-            vm.toggleCollapsed()
-        } label: {
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(Color.accentColor)
-                    .frame(width: 8, height: 8)
-                    .shadow(color: Color.accentColor.opacity(0.5), radius: 4)
+        HStack(spacing: 8) {
+            Button {
+                vm.toggleCollapsed()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "viewfinder.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
 
-                Text("GlassBox")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    Text("CodeSight")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(.primary)
 
-                Text("·")
-                    .foregroundStyle(.tertiary)
-
-                Text(vm.repoDisplayName)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                Spacer(minLength: 4)
-
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    Text(vm.repoDisplayName)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                AppleGlassBackground(material: .hudWindow)
-                    .clipShape(Capsule(style: .continuous))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [.white.opacity(0.45), .white.opacity(0.1)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 0.8
-                    )
-            )
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 4)
+
+            Button {
+                vm.requestClose()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .background(Color.primary.opacity(0.07), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help("关闭 CodeSight")
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            AppleGlassBackground(material: .hudWindow)
+                .clipShape(Capsule(style: .continuous))
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [.white.opacity(0.45), .white.opacity(0.1)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 0.8
+                )
+        )
     }
 }
 
@@ -98,87 +175,146 @@ struct ExpandedHUDView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 1. Minimal Native Header (draggable area)
+            // 1. Minimal Native Header (Draggable)
             HStack(spacing: 8) {
-                Image(systemName: "cube.transparent")
-                    .font(.system(size: 14, weight: .semibold))
+                Image(systemName: "viewfinder.circle.fill")
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
 
-                Text("GlassBox")
-                    .font(.system(size: 13.5, weight: .semibold))
+                Text("CodeSight")
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.primary)
 
                 Button {
                     vm.pickRepositoryFolder()
                 } label: {
                     HStack(spacing: 4) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 10, weight: .medium))
                         Text(vm.repoDisplayName)
                             .lineLimit(1)
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(.system(size: 8.5, weight: .semibold))
                     }
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 3.5)
+                    .padding(.vertical, 4)
                     .background(Color.primary.opacity(0.06), in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .help("切换本地代码仓库目录")
+                .help("切换本地代码仓库")
 
                 Spacer()
 
                 if vm.isLoading {
                     ProgressView()
                         .controlSize(.small)
-                        .scaleEffect(0.75)
+                        .scaleEffect(0.72)
                 }
 
+                // Settings / BYOK LLM toggle
                 Button {
-                    Task { await vm.loadMap() }
+                    withAnimation(.snappy(duration: 0.18)) {
+                        vm.showSettings.toggle()
+                    }
                 } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(vm.showSettings ? Color.accentColor : Color.secondary)
+                            .frame(width: 26, height: 26)
+                            .background(
+                                (vm.showSettings ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.05)),
+                                in: Circle()
+                            )
+                        if vm.llmConfig.enabled {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 6, height: 6)
+                                .offset(x: -2, y: 2)
+                        }
+                    }
                 }
                 .buttonStyle(.plain)
-                .help("增量刷新代码索引")
+                .help("模型与连接设置")
 
+                // Collapse to floating capsule
                 Button {
                     vm.toggleCollapsed()
                 } label: {
                     Image(systemName: "minus")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: 26, height: 26)
                         .background(Color.primary.opacity(0.05), in: Circle())
                 }
                 .buttonStyle(.plain)
                 .help("收起为悬浮胶囊")
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 14)
-            .padding(.bottom, 10)
 
-            // 2. Apple Segmented Tab Bar
-            Picker("", selection: $vm.activeTab) {
-                ForEach(HUDTab.allCases) { tab in
-                    Text(tab.rawValue).tag(tab)
+                // Explicit Close Button
+                Button {
+                    vm.requestClose()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 26, height: 26)
+                        .background(Color.primary.opacity(0.05), in: Circle())
                 }
+                .buttonStyle(.plain)
+                .help("关闭 CodeSight")
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 18)
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
             .padding(.bottom, 12)
 
-            Divider().opacity(0.35)
+            // 2. Custom Apple Pill Tab Bar (hidden when Settings sheet is open)
+            if !vm.showSettings {
+                HStack(spacing: 4) {
+                    ForEach(HUDTab.allCases) { tab in
+                        let isActive = vm.activeTab == tab
+                        Button {
+                            withAnimation(.snappy(duration: 0.2)) {
+                                vm.activeTab = tab
+                            }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: tab.symbol)
+                                    .font(.system(size: 11.5, weight: .medium))
+                                Text(tab.rawValue)
+                                    .font(.system(size: 12, weight: isActive ? .semibold : .medium))
+                            }
+                            .foregroundStyle(isActive ? Color.primary : Color.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6.5)
+                            .background(
+                                Group {
+                                    if isActive {
+                                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.92))
+                                            .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
+                                    }
+                                }
+                            )
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(3)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 11.5, style: .continuous))
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+            }
 
-            // 3. Error Toast if any
+            Divider().opacity(0.28)
+
+            // 3. Inline Error Banner
             if let err = vm.errorMessage {
                 HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.circle.fill")
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11.5))
                         .foregroundStyle(.orange)
                     Text(err)
                         .font(.system(size: 11.5))
@@ -187,30 +323,33 @@ struct ExpandedHUDView: View {
                     Spacer()
                     Button { vm.errorMessage = nil } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 10))
+                            .font(.system(size: 9.5, weight: .semibold))
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Color.orange.opacity(0.12))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 9)
+                .background(Color.orange.opacity(0.11))
             }
 
-            // 4. Calm Scrollable Tab Body
+            // 4. Calm Scrollable Content Area
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 14) {
-                    switch vm.activeTab {
-                    case .map:
-                        MapTabView(vm: vm)
-                    case .ask:
-                        AskTabView(vm: vm)
-                    case .diagnose:
-                        DiagnoseTabView(vm: vm)
+                VStack(alignment: .leading, spacing: 12) {
+                    if vm.showSettings {
+                        SettingsCardView(vm: vm)
+                    } else {
+                        switch vm.activeTab {
+                        case .map:
+                            MapTabView(vm: vm)
+                        case .ask:
+                            AskTabView(vm: vm)
+                        case .diagnose:
+                            DiagnoseTabView(vm: vm)
+                        }
                     }
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 14)
+                .padding(16)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -222,7 +361,7 @@ struct ExpandedHUDView: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .strokeBorder(
                     LinearGradient(
-                        colors: [.white.opacity(0.42), .white.opacity(0.08)],
+                        colors: [.white.opacity(0.45), .white.opacity(0.08)],
                         startPoint: .top,
                         endPoint: .bottom
                     ),
@@ -232,160 +371,259 @@ struct ExpandedHUDView: View {
     }
 }
 
-// MARK: - Tab 1: Map (10-second Human Comprehension Map)
+// MARK: - Settings View (BYOK LLM + Sidecar Status)
+
+struct SettingsCardView: View {
+    @ObservedObject var vm: HUDViewModel
+
+    private let presets: [(String, String, String)] = [
+        ("OpenAI mini", "https://api.openai.com/v1", "gpt-4o-mini"),
+        ("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat"),
+        ("Gemini Flash", "https://openrouter.ai/api/v1", "google/gemini-2.5-flash"),
+        ("Ollama 本地", "http://127.0.0.1:11434/v1", "qwen2.5-coder:7b"),
+    ]
+
+    var body: some View {
+        SightCard(
+            icon: "sparkles",
+            tint: .accentColor,
+            title: "轻量模型增强（BYOK）",
+            trailingText: vm.llmConfig.enabled ? "已开启" : "0-Token 纯本地",
+            trailingTint: vm.llmConfig.enabled ? .green : .secondary
+        ) {
+            Text("默认 100% 本地 GraphRAG 极速检索（不消耗任何 Token）。开启后，仅将剪枝后的约 600 Token 核心切片发给你的小模型，合成深度中文解释。")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+                .lineSpacing(3)
+
+            Toggle("启用 BYOK 小模型深度解读", isOn: $vm.llmConfig.enabled)
+                .toggleStyle(.switch)
+                .font(.system(size: 12.5, weight: .medium))
+
+            HStack(spacing: 6) {
+                ForEach(presets, id: \.0) { preset in
+                    Button {
+                        vm.llmConfig = BYOKLLMConfig(
+                            enabled: true,
+                            baseUrl: preset.1,
+                            apiKey: vm.llmConfig.apiKey,
+                            model: preset.2
+                        )
+                    } label: {
+                        Text(preset.0)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(vm.llmConfig.model == preset.2 ? Color.accentColor : Color.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                vm.llmConfig.model == preset.2 ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.05),
+                                in: Capsule()
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            VStack(spacing: 8) {
+                TextField("Base URL (OpenAI 兼容)", text: $vm.llmConfig.baseUrl)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11.5, design: .monospaced))
+
+                TextField("Model ID", text: $vm.llmConfig.model)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11.5, design: .monospaced))
+
+                SecureField("API Key（本地保存，Ollama 可留空）", text: $vm.llmConfig.apiKey)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11.5, design: .monospaced))
+            }
+        }
+
+        SightCard(
+            icon: "bolt.horizontal.circle",
+            tint: vm.sidecarOnline ? .green : .orange,
+            title: "本地引擎通道",
+            trailingText: vm.sidecarOnline ? "Sidecar 在线" : "CLI 隔离模式",
+            trailingTint: vm.sidecarOnline ? .green : .orange
+        ) {
+            Text(
+                vm.sidecarOnline
+                ? "已直连本地 Sidecar（127.0.0.1:4317），响应约 5ms，且不会触发 macOS 文件访问权限弹窗。"
+                : "当前使用受限沙箱 CLI 兜底。在项目终端运行 npm run dev:sidecar 可获得毫秒级热响应并支持 BYOK 模型增强。"
+            )
+            .font(.system(size: 11.5))
+            .foregroundStyle(.secondary)
+            .lineSpacing(3)
+
+            Button {
+                withAnimation(.snappy(duration: 0.18)) { vm.showSettings = false }
+            } label: {
+                Text("完成并返回")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+// MARK: - Tab 1: Map (Clear Card Hierarchy, Zero Emojis)
 
 struct MapTabView: View {
     @ObservedObject var vm: HUDViewModel
 
     var body: some View {
         if let map = vm.repoMap {
-            // Subtle telemetry whisper
-            HStack {
-                Text("\(map.totalFiles) 文件 · \(map.totalSymbols) AST 符号")
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("缓存命中 \(map.cachedFiles)/\(map.totalFiles) · \(map.scanMs)ms")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-            }
-
-            // Core Hubs Card
-            if !map.hubs.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("核心枢纽（动这些文件波及最大）", systemImage: "star.circle.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
-
-                    VStack(spacing: 8) {
-                        ForEach(map.hubs.prefix(4)) { hub in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(URL(fileURLWithPath: hub.path).lastPathComponent)
-                                        .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
-                                        .foregroundStyle(.primary)
-                                    Text(hub.roleLabel)
-                                        .font(.system(size: 10.5, weight: .medium))
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    Text("波及 \(hub.downstreamReach)")
-                                        .font(.system(size: 10.5, weight: .semibold))
-                                        .foregroundStyle(.orange)
-                                        .padding(.horizontal, 7)
-                                        .padding(.vertical, 2)
-                                        .background(Color.orange.opacity(0.12), in: Capsule())
-                                }
-                                Text(hub.summary)
-                                    .font(.system(size: 12))
+            // Card 1: Repo Overview & Core Hubs
+            SightCard(
+                icon: "exclamationmark.shield",
+                tint: .orange,
+                title: "核心枢纽（改动波及最大）",
+                trailingText: "\(map.totalFiles) 文件 · \(map.scanMs)ms",
+                trailingTint: .secondary
+            ) {
+                VStack(spacing: 0) {
+                    ForEach(Array(map.hubs.prefix(4).enumerated()), id: \.element.id) { idx, hub in
+                        if idx > 0 {
+                            Divider().opacity(0.28).padding(.vertical, 9)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 6) {
+                                Text(URL(fileURLWithPath: hub.path).lastPathComponent)
+                                    .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(.primary)
+                                Text(hub.roleLabel)
+                                    .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
-                                    .lineSpacing(2)
+                                Spacer()
+                                Text("波及 \(hub.downstreamReach)")
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                    .foregroundStyle(.orange)
                             }
-                            .padding(11)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                            Text(hub.summary)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .lineSpacing(2)
                         }
                     }
                 }
             }
 
-            // Layered File Map (Progressive Disclosure)
-            VStack(alignment: .leading, spacing: 8) {
-                Text("每个文件在干什么")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 2)
-
-                ForEach(map.sections) { sec in
-                    let isOpen = vm.expandedLayers.contains(sec.layer)
-                    VStack(spacing: 0) {
-                        Button {
-                            withAnimation(.snappy(duration: 0.2)) {
-                                if isOpen { vm.expandedLayers.remove(sec.layer) }
-                                else { vm.expandedLayers.insert(sec.layer) }
-                            }
-                        } label: {
-                            HStack {
-                                Text(sec.layerTitle)
-                                    .font(.system(size: 12.5, weight: .medium))
-                                    .foregroundStyle(.primary)
-                                Spacer()
-                                Text("\(sec.files.count)")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundStyle(.tertiary)
-                                Image(systemName: isOpen ? "chevron.down" : "chevron.right")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 9)
-                            .contentShape(Rectangle())
+            // Card 2: Layered Architecture Directory (Clean Inset List)
+            SightCard(
+                icon: "square.stack.3d.up",
+                tint: .accentColor,
+                title: "分层职责地图",
+                trailingText: "\(map.totalSymbols) AST 符号"
+            ) {
+                VStack(spacing: 0) {
+                    ForEach(Array(map.sections.enumerated()), id: \.element.id) { sIdx, sec in
+                        let isOpen = vm.expandedLayers.contains(sec.layer)
+                        if sIdx > 0 {
+                            Divider().opacity(0.25)
                         }
-                        .buttonStyle(.plain)
 
-                        if isOpen {
-                            Divider().opacity(0.25).padding(.horizontal, 12)
-                            VStack(spacing: 6) {
-                                ForEach(sec.files) { f in
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        HStack {
-                                            Text(f.name)
-                                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                            Spacer()
-                                            Text("入\(f.inDegree) 出\(f.outDegree)")
-                                                .font(.system(size: 10.5, design: .monospaced))
-                                                .foregroundStyle(.tertiary)
-                                        }
-                                        Text(f.summary)
-                                            .font(.system(size: 11.5))
-                                            .foregroundStyle(.secondary)
-                                            .lineSpacing(2)
+                        VStack(spacing: 0) {
+                            Button {
+                                withAnimation(.snappy(duration: 0.2)) {
+                                    if isOpen { vm.expandedLayers.remove(sec.layer) }
+                                    else { vm.expandedLayers.insert(sec.layer) }
+                                }
+                            } label: {
+                                HStack(spacing: 9) {
+                                    Image(systemName: symbolForLayer(sec.layer))
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 18)
 
-                                        if !f.exports.isEmpty {
-                                            ScrollView(.horizontal, showsIndicators: false) {
+                                    Text(sec.layerTitle)
+                                        .font(.system(size: 12.5, weight: .medium))
+                                        .foregroundStyle(.primary)
+
+                                    Spacer()
+
+                                    Text("\(sec.files.count)")
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundStyle(.tertiary)
+
+                                    Image(systemName: isOpen ? "chevron.down" : "chevron.right")
+                                        .font(.system(size: 9.5, weight: .semibold))
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .padding(.vertical, 9)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+
+                            if isOpen {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    ForEach(sec.files) { f in
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            HStack {
+                                                Text(f.name)
+                                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                                    .foregroundStyle(.primary)
+                                                Spacer()
+                                                Text("入 \(f.inDegree) · 出 \(f.outDegree)")
+                                                    .font(.system(size: 10, design: .monospaced))
+                                                    .foregroundStyle(.tertiary)
+                                            }
+                                            Text(f.summary)
+                                                .font(.system(size: 11.5))
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(2)
+                                                .lineSpacing(2)
+
+                                            if !f.exports.isEmpty {
                                                 HStack(spacing: 5) {
-                                                    ForEach(f.exports.prefix(3), id: \.self) { sym in
+                                                    ForEach(f.exports.prefix(2), id: \.self) { sym in
                                                         Button {
                                                             Task { await vm.runTrace(symbol: sym) }
                                                         } label: {
-                                                            Text("\(sym) ›")
-                                                                .font(.system(size: 10.5, design: .monospaced))
-                                                                .foregroundStyle(Color.accentColor)
-                                                                .padding(.horizontal, 7)
-                                                                .padding(.vertical, 2)
-                                                                .background(Color.accentColor.opacity(0.1), in: Capsule())
+                                                            HStack(spacing: 3) {
+                                                                Image(systemName: "arrow.turn.down.right")
+                                                                    .font(.system(size: 9))
+                                                                Text(sym)
+                                                            }
+                                                            .font(.system(size: 10.5, design: .monospaced))
+                                                            .foregroundStyle(Color.accentColor)
+                                                            .padding(.horizontal, 7)
+                                                            .padding(.vertical, 2.5)
+                                                            .background(Color.accentColor.opacity(0.1), in: Capsule())
                                                         }
                                                         .buttonStyle(.plain)
                                                     }
                                                 }
+                                                .padding(.top, 2)
                                             }
-                                            .padding(.top, 2)
                                         }
+                                        .padding(.leading, 27)
                                     }
-                                    .padding(10)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 }
+                                .padding(.bottom, 10)
                             }
-                            .padding(8)
                         }
                     }
-                    .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
             }
         } else {
-            VStack(spacing: 10) {
-                ProgressView()
-                Text("正在用 AST + GraphRAG 建立项目地图…")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(.secondary)
+            SightCard(icon: "cpu", tint: .accentColor, title: "正在扫描仓库结构") {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("通过 AST 与依赖图建立增量索引…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 48)
         }
     }
 }
 
-// MARK: - Tab 2: Ask & Trace (Spotlight-style GraphRAG Search)
+// MARK: - Tab 2: Ask & Trace
 
 struct AskTabView: View {
     @ObservedObject var vm: HUDViewModel
@@ -397,21 +635,17 @@ struct AskTabView: View {
     ]
 
     var body: some View {
-        // Spotlight Search Field
+        // Spotlight Search Bar
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.secondary)
-            TextField("用中文问代码在哪，或 trace 函数名…", text: $vm.askQuery)
+            TextField("问代码逻辑在哪，或 trace 函数名…", text: $vm.askQuery)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
-                .onSubmit {
-                    Task { await vm.submitAsk() }
-                }
+                .onSubmit { Task { await vm.submitAsk() } }
             if !vm.askQuery.isEmpty {
-                Button {
-                    vm.askQuery = ""
-                } label: {
+                Button { vm.askQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.tertiary)
                 }
@@ -419,10 +653,17 @@ struct AskTabView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.75))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.75)
+        )
 
-        // Quick Suggestion Chips
+        // Quick Prompts
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(quickQueries, id: \.self) { q in
@@ -434,156 +675,147 @@ struct AskTabView: View {
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 9)
                             .padding(.vertical, 4.5)
-                            .background(Color.primary.opacity(0.05), in: Capsule())
+                            .background(Color.primary.opacity(0.06), in: Capsule())
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
 
-        // Symbol Trace View
+        // Trace Card
         if let trace = vm.traceResult {
-            HStack {
-                Label("AST 跨文件调用图", systemImage: "point.3.connected.trianglepath.dotted")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("\(trace.traceMs)ms")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-            }
-
-            if trace.matches.isEmpty {
-                Text("未在 AST 符号表中找到「\(trace.querySymbol)」")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 16)
-            } else {
-                ForEach(trace.matches) { m in
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text(m.symbol.name)
-                                .font(.system(size: 13.5, weight: .semibold, design: .monospaced))
-                            Spacer()
-                            Text("\(URL(fileURLWithPath: m.symbol.file).lastPathComponent):\(m.symbol.startLine)")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Text(m.symbol.signature)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .padding(8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("被谁调用 (\(m.calledBy.count))")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                            if m.calledBy.isEmpty {
-                                Text("无跨文件调用方")
-                                    .font(.system(size: 11.5))
-                                    .foregroundStyle(.tertiary)
-                            } else {
-                                ForEach(m.calledBy) { edge in
-                                    Text("← \(edge.callerName)  (\(URL(fileURLWithPath: edge.callerFile).lastPathComponent):\(edge.callerLine))")
-                                        .font(.system(size: 11.5, design: .monospaced))
-                                        .foregroundStyle(.primary)
-                                }
-                            }
-                        }
-
-                        if !m.callsOut.isEmpty {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("内部调用 (\(m.callsOut.count))")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(.secondary)
-                                ForEach(m.callsOut.prefix(5)) { edge in
-                                    Text("→ \(edge.calleeName)  (\(URL(fileURLWithPath: edge.calleeFile).lastPathComponent):\(edge.calleeLine))")
-                                        .font(.system(size: 11.5, design: .monospaced))
+            SightCard(
+                icon: "point.3.connected.trianglepath.dotted",
+                tint: .purple,
+                title: "函数调用图追踪",
+                trailingText: "\(trace.traceMs)ms"
+            ) {
+                if trace.matches.isEmpty {
+                    Text("未在 AST 符号表中找到「\(trace.querySymbol)」")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(trace.matches.enumerated()), id: \.element.id) { idx, m in
+                            if idx > 0 { Divider().opacity(0.28).padding(.vertical, 10) }
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text(m.symbol.name)
+                                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                                    Spacer()
+                                    Text("\(URL(fileURLWithPath: m.symbol.file).lastPathComponent):\(m.symbol.startLine)")
+                                        .font(.system(size: 11, design: .monospaced))
                                         .foregroundStyle(.secondary)
+                                }
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("被谁调用 (\(m.calledBy.count))")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                    if m.calledBy.isEmpty {
+                                        Text("无跨文件调用方")
+                                            .font(.system(size: 11.5))
+                                            .foregroundStyle(.tertiary)
+                                    } else {
+                                        ForEach(m.calledBy) { edge in
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "arrow.left")
+                                                    .font(.system(size: 9.5))
+                                                    .foregroundStyle(.purple)
+                                                Text("\(edge.callerName)  (\(URL(fileURLWithPath: edge.callerFile).lastPathComponent):\(edge.callerLine))")
+                                                    .font(.system(size: 11.5, design: .monospaced))
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
                 }
             }
         }
 
-        // Hybrid RRF Ask Results
+        // Ask Results: Optional AI Synthesis Card + Evidence Card
         if let res = vm.askResult {
-            HStack {
-                Text("最相关文件")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("省 \(String(format: "%.1f", res.savedPercent))% Token · \(res.retrievalMs)ms")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.green)
+            if let answer = res.aiAnswer {
+                SightCard(
+                    icon: "sparkles",
+                    tint: .green,
+                    title: "AI 深度解读",
+                    trailingText: res.llmModel ?? "BYOK",
+                    trailingTint: .green
+                ) {
+                    Text(answer)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.primary)
+                        .lineSpacing(4)
+                }
             }
 
-            ForEach(res.hits.prefix(4)) { hit in
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(hit.file.name)
-                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                        Text(hit.file.roleLabel)
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text("RRF \(String(format: "%.1f", hit.totalScore))")
-                            .font(.system(size: 10.5, design: .monospaced))
-                            .foregroundStyle(.tertiary)
-                    }
-                    Text(hit.file.summary)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineSpacing(2)
+            SightCard(
+                icon: "doc.text.magnifyingglass",
+                tint: .accentColor,
+                title: "定位到的核心文件",
+                trailingText: "省 \(String(format: "%.1f", res.savedPercent))% · \(res.retrievalMs)ms",
+                trailingTint: .green
+            ) {
+                VStack(spacing: 0) {
+                    ForEach(Array(res.hits.prefix(4).enumerated()), id: \.element.id) { idx, hit in
+                        if idx > 0 { Divider().opacity(0.26).padding(.vertical, 10) }
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack {
+                                Text(hit.file.name)
+                                    .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                                Text(hit.file.roleLabel)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text("RRF \(String(format: "%.1f", hit.totalScore))")
+                                    .font(.system(size: 10.5, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            Text(hit.file.summary)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.secondary)
+                                .lineSpacing(2)
 
-                    if !hit.matchReasons.isEmpty {
-                        Text(hit.matchReasons.prefix(2).joined(separator: " · "))
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.tertiary)
-                    }
-
-                    if !hit.file.exports.isEmpty {
-                        HStack(spacing: 5) {
-                            ForEach(hit.file.exports.prefix(2), id: \.self) { sym in
-                                Button {
-                                    Task { await vm.runTrace(symbol: sym) }
-                                } label: {
-                                    Text("追踪 \(sym) ›")
-                                        .font(.system(size: 10.5, design: .monospaced))
-                                        .foregroundStyle(Color.accentColor)
-                                        .padding(.horizontal, 7)
-                                        .padding(.vertical, 2.5)
-                                        .background(Color.accentColor.opacity(0.1), in: Capsule())
+                            if !hit.file.exports.isEmpty {
+                                HStack(spacing: 5) {
+                                    ForEach(hit.file.exports.prefix(2), id: \.self) { sym in
+                                        Button {
+                                            Task { await vm.runTrace(symbol: sym) }
+                                        } label: {
+                                            HStack(spacing: 3) {
+                                                Image(systemName: "point.3.connected.trianglepath.dotted")
+                                                    .font(.system(size: 9))
+                                                Text(sym)
+                                            }
+                                            .font(.system(size: 10.5, design: .monospaced))
+                                            .foregroundStyle(Color.accentColor)
+                                            .padding(.horizontal, 7)
+                                            .padding(.vertical, 2.5)
+                                            .background(Color.accentColor.opacity(0.1), in: Capsule())
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
                                 }
-                                .buttonStyle(.plain)
+                                .padding(.top, 2)
                             }
                         }
-                        .padding(.top, 2)
                     }
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
         }
     }
 }
 
-// MARK: - Tab 3: Diagnose (Blast Radius Projection & Decision)
+// MARK: - Tab 3: Diagnose (3 Explicit Cards: Diagnosis / Blast Radius / Decision)
 
 struct DiagnoseTabView: View {
     @ObservedObject var vm: HUDViewModel
 
     var body: some View {
-        // Two ultra-clean Apple quick actions
+        // Quick Action Bar
         HStack(spacing: 8) {
             Button {
                 Task { await vm.diagnoseFromClipboard() }
@@ -591,9 +823,9 @@ struct DiagnoseTabView: View {
                 Label("读取剪贴板报错", systemImage: "doc.on.clipboard")
                     .font(.system(size: 12, weight: .semibold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 9)
-                    .background(Color.accentColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                    .foregroundStyle(Color.accentColor)
+                    .padding(.vertical, 9.5)
+                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .foregroundStyle(.white)
             }
             .buttonStyle(.plain)
 
@@ -603,21 +835,25 @@ struct DiagnoseTabView: View {
                 Label("扫描 Git Diff", systemImage: "arrow.triangle.branch")
                     .font(.system(size: 12, weight: .medium))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 9)
-                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .padding(.vertical, 9.5)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.8), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.75)
+                    )
                     .foregroundStyle(.primary)
             }
             .buttonStyle(.plain)
         }
 
-        // Progressive disclosure manual error input
+        // Progressive disclosure manual input
         Button {
             withAnimation(.snappy(duration: 0.2)) { vm.showManualInput.toggle() }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 Image(systemName: vm.showManualInput ? "chevron.down" : "chevron.right")
                     .font(.system(size: 9.5, weight: .semibold))
-                Text(vm.showManualInput ? "收起手动输入" : "或手动粘贴报错文本")
+                Text(vm.showManualInput ? "收起手动输入框" : "手动粘贴报错文本")
                     .font(.system(size: 11.5))
             }
             .foregroundStyle(.secondary)
@@ -625,148 +861,140 @@ struct DiagnoseTabView: View {
         .buttonStyle(.plain)
 
         if vm.showManualInput {
-            VStack(spacing: 8) {
+            SightCard(icon: "text.alignleft", tint: .secondary, title: "粘贴终端报错") {
                 TextEditor(text: $vm.diagnoseInput)
                     .font(.system(size: 11.5, design: .monospaced))
-                    .frame(height: 84)
+                    .frame(height: 80)
                     .scrollContentBackground(.hidden)
-                    .padding(8)
-                    .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
 
                 Button {
                     Task { await vm.runDiagnose() }
                 } label: {
-                    Text("投影分析")
+                    Text("开始投影分析")
                         .font(.system(size: 12, weight: .semibold))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 7)
-                        .background(Color.primary.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
+                        .padding(.vertical, 7.5)
+                        .background(Color.accentColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .foregroundStyle(Color.accentColor)
                 }
                 .buttonStyle(.plain)
             }
         }
 
         if let report = vm.diagnoseReport {
-            // 1. Plain Diagnosis Card
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("一句话看懂")
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("省 \(String(format: "%.1f", report.tokenEconomy.savedPercent))% · \(report.tokenEconomy.retrievalMs)ms")
-                        .font(.system(size: 10.5, design: .monospaced))
-                        .foregroundStyle(.green)
-                }
-
-                Text(report.plainDiagnosis)
-                    .font(.system(size: 13.5, weight: .medium))
+            // Card 1: Plain-Language Diagnosis
+            SightCard(
+                icon: "stethoscope",
+                tint: .red,
+                title: "问题诊断",
+                trailingText: "省 \(String(format: "%.1f", report.tokenEconomy.savedPercent))% · \(report.tokenEconomy.retrievalMs)ms",
+                trailingTint: .green
+            ) {
+                Text(report.aiSummary ?? report.plainDiagnosis)
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineSpacing(4)
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
 
-            // 2. Blast Radius & Safe Zone Card
+            // Card 2: Blast Radius & Safe Zone
             if let br = report.blastRadius {
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack {
-                        let (label, color): (String, Color) =
-                            br.riskLevel == "high-hub" ? ("高风险核心枢纽", .red) :
-                            br.riskLevel == "medium-bridge" ? ("中游桥接节点", .orange) :
-                            ("低风险末梢节点", .green)
+                let (riskLabel, riskColor): (String, Color) =
+                    br.riskLevel == "high-hub" ? ("高风险核心枢纽", .red) :
+                    br.riskLevel == "medium-bridge" ? ("中游桥接节点", .orange) :
+                    ("低风险末梢节点", .green)
 
-                        Text(label)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(color)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(color.opacity(0.13), in: Capsule())
-
-                        Spacer()
-
-                        Label("其余 \(br.safeZoneCount) 文件安全免读", systemImage: "checkmark.shield.fill")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.green)
-                    }
-
-                    if !br.directImpact.isEmpty {
-                        Text("直接波及：\(br.directImpact.map { $0.name }.joined(separator: "、"))")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(.secondary)
-                    }
-                    if !report.symbolCallers.isEmpty {
-                        Text("函数调用方：\(report.symbolCallers.prefix(3).map { "\($0.callerName) (\($0.callerFile.split(separator: "/").last ?? ""))" }.joined(separator: " · "))")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(13)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-
-            // 3. Silent Regressions (if any)
-            if !report.silentRegressions.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Label("捕获 AI 静默风险 (\(report.silentRegressions.count))", systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.orange)
-                    ForEach(report.silentRegressions) { reg in
-                        Text("• \(reg.title)：\(reg.riskImpact)")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(.secondary)
-                            .lineSpacing(2)
-                    }
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            }
-
-            // 4. Decision Fork & 1-Click Copy CTA
-            if !report.directions.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("让 AI 怎么改？（选一个方向）")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
-
-                    ForEach(report.directions) { dir in
-                        let isSelected = vm.selectedDirectionId == dir.id
-                        Button {
-                            vm.selectedDirectionId = dir.id
-                        } label: {
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                                    .padding(.top, 1)
-
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(dir.label)
-                                        .font(.system(size: 12.5, weight: .semibold))
-                                        .foregroundStyle(.primary)
-                                        .multilineTextAlignment(.leading)
-                                    Text(dir.strategy)
-                                        .font(.system(size: 11.5))
-                                        .foregroundStyle(.secondary)
-                                        .multilineTextAlignment(.leading)
-                                        .lineSpacing(2)
-                                }
-                            }
-                            .padding(11)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(
-                                isSelected ? Color.accentColor.opacity(0.11) : Color.primary.opacity(0.04),
-                                in: RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                    .strokeBorder(isSelected ? Color.accentColor.opacity(0.45) : .clear, lineWidth: 1)
-                            )
+                SightCard(
+                    icon: "circle.dashed.inset.filled",
+                    tint: riskColor,
+                    title: "爆炸半径与安全区",
+                    trailingText: riskLabel,
+                    trailingTint: riskColor
+                ) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.shield.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.green)
+                            Text("其余 \(br.safeZoneCount) 个业务文件完全不受影响，无需去读")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.primary)
                         }
-                        .buttonStyle(.plain)
+
+                        if !br.directImpact.isEmpty {
+                            Divider().opacity(0.25)
+                            Text("直接波及：\(br.directImpact.map { $0.name }.joined(separator: "、"))")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if !report.symbolCallers.isEmpty {
+                            Text("函数调用方：\(report.symbolCallers.prefix(3).map { "\($0.callerName) (\($0.callerFile.split(separator: "/").last ?? ""))" }.joined(separator: " · "))")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            // Card 3 (Conditional): Silent Regressions
+            if !report.silentRegressions.isEmpty {
+                SightCard(
+                    icon: "exclamationmark.triangle.fill",
+                    tint: .orange,
+                    title: "AI 静默退化预警",
+                    trailingText: "\(report.silentRegressions.count) 处",
+                    trailingTint: .orange
+                ) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(report.silentRegressions) { reg in
+                            Text("• \(reg.title)：\(reg.riskImpact)")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.secondary)
+                                .lineSpacing(2)
+                        }
+                    }
+                }
+            }
+
+            // Card 4: Decision Fork + Copy Prompt
+            if !report.directions.isEmpty {
+                SightCard(
+                    icon: "arrow.triangle.branch",
+                    tint: .accentColor,
+                    title: "修复方向决策",
+                    trailingText: "选 1 个方向"
+                ) {
+                    VStack(spacing: 0) {
+                        ForEach(Array(report.directions.enumerated()), id: \.element.id) { idx, dir in
+                            let isSelected = vm.selectedDirectionId == dir.id
+                            if idx > 0 { Divider().opacity(0.25).padding(.vertical, 8) }
+
+                            Button {
+                                vm.selectedDirectionId = dir.id
+                            } label: {
+                                HStack(alignment: .top, spacing: 10) {
+                                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                        .font(.system(size: 15))
+                                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.6))
+                                        .padding(.top, 1)
+
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(dir.label)
+                                            .font(.system(size: 12.5, weight: .semibold))
+                                            .foregroundStyle(.primary)
+                                            .multilineTextAlignment(.leading)
+                                        Text(dir.strategy)
+                                            .font(.system(size: 11.5))
+                                            .foregroundStyle(.secondary)
+                                            .multilineTextAlignment(.leading)
+                                            .lineSpacing(2)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
 
                     Button {
@@ -776,33 +1004,23 @@ struct DiagnoseTabView: View {
                             Image(systemName: vm.copiedToast ? "checkmark" : "doc.on.doc")
                             Text(vm.copiedToast ? "已复制精确修复指令" : "复制精确修复指令给 Agent")
                         }
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
-                        .background(vm.copiedToast ? Color.green : Color.accentColor, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .padding(.vertical, 10)
+                        .background(vm.copiedToast ? Color.green : Color.accentColor, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .padding(.top, 4)
                 }
             }
         } else {
-            VStack(spacing: 8) {
-                Image(systemName: "sparkles.rectangle.stack")
-                    .font(.system(size: 26))
-                    .foregroundStyle(.tertiary)
-                Text("复制任意终端报错，点击上方「读取剪贴板报错」")
-                    .font(.system(size: 12.5, weight: .medium))
+            SightCard(icon: "waveform.path.ecg", tint: .secondary, title: "准备就绪") {
+                Text("复制任意终端报错并点击「读取剪贴板报错」，或点击「扫描 Git Diff」。CodeSight 会将问题投影到真实依赖图上，给出爆炸半径与修复方向。")
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                Text("GlassBox 会立刻把错误投影到真实依赖图上，告诉你波及哪些文件、怎么让 AI 改最稳。")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
                     .lineSpacing(3)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 32)
-            .padding(.horizontal, 12)
         }
     }
 }

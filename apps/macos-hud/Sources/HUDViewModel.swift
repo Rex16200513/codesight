@@ -6,18 +6,36 @@ enum HUDTab: String, CaseIterable, Identifiable {
     case map = "地图"
     case ask = "问代码"
     case diagnose = "排错"
+
     var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .map: return "map"
+        case .ask: return "magnifyingglass"
+        case .diagnose: return "waveform.path.ecg"
+        }
+    }
 }
 
 @MainActor
 final class HUDViewModel: ObservableObject {
+    private static let llmDefaultsKey = "codesight_byok_llm_v1"
+
     let bridge = EngineBridge()
 
     @Published var repoDir: String
     @Published var activeTab: HUDTab = .map
+    @Published var showSettings: Bool = false
     @Published var isCollapsed: Bool = false
     @Published var isLoading: Bool = false
+    @Published var sidecarOnline: Bool = false
     @Published var errorMessage: String?
+
+    // BYOK LLM Config
+    @Published var llmConfig: BYOKLLMConfig {
+        didSet { saveLLMConfig() }
+    }
 
     // Map state
     @Published var repoMap: RepoMapDTO?
@@ -35,13 +53,27 @@ final class HUDViewModel: ObservableObject {
     @Published var selectedDirectionId: String?
     @Published var copiedToast: Bool = false
 
-    // Callback hooked by HUDPanelController to smoothly animate window frame resize
     var onCollapseChanged: ((Bool) -> Void)?
+    var onCloseRequested: (() -> Void)?
 
     init() {
         self.repoDir = bridge.defaultRepoRoot
+        if let data = UserDefaults.standard.data(forKey: Self.llmDefaultsKey),
+           let decoded = try? JSONDecoder().decode(BYOKLLMConfig.self, from: data) {
+            self.llmConfig = decoded
+        } else {
+            self.llmConfig = .default
+        }
+
         Task {
+            sidecarOnline = await bridge.checkSidecarHealth()
             await loadMap()
+        }
+    }
+
+    private func saveLLMConfig() {
+        if let data = try? JSONEncoder().encode(llmConfig) {
+            UserDefaults.standard.set(data, forKey: Self.llmDefaultsKey)
         }
     }
 
@@ -54,13 +86,17 @@ final class HUDViewModel: ObservableObject {
         onCollapseChanged?(isCollapsed)
     }
 
+    func requestClose() {
+        onCloseRequested?()
+    }
+
     func pickRepositoryFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "选择项目目录"
-        panel.message = "选择一个本地代码仓库，GlassBox 将用 GraphRAG 秒级建立人话地图"
+        panel.prompt = "选择项目"
+        panel.message = "选择本地代码仓库，CodeSight 将秒级建立人话结构地图"
         panel.directoryURL = URL(fileURLWithPath: repoDir)
 
         NSApp.activate(ignoringOtherApps: true)
@@ -76,6 +112,7 @@ final class HUDViewModel: ObservableObject {
     func loadMap() async {
         isLoading = true
         errorMessage = nil
+        sidecarOnline = await bridge.checkSidecarHealth()
         do {
             repoMap = try await bridge.fetchMap(repoDir: repoDir)
         } catch {
@@ -97,7 +134,7 @@ final class HUDViewModel: ObservableObject {
                 traceResult = try await bridge.trace(repoDir: repoDir, symbol: sym)
                 askResult = nil
             } else {
-                askResult = try await bridge.ask(repoDir: repoDir, question: q)
+                askResult = try await bridge.ask(repoDir: repoDir, question: q, llmConfig: llmConfig)
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -106,6 +143,7 @@ final class HUDViewModel: ObservableObject {
     }
 
     func runTrace(symbol: String) async {
+        showSettings = false
         activeTab = .ask
         askQuery = "trace \(symbol)"
         isLoading = true
@@ -135,7 +173,7 @@ final class HUDViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         do {
-            let report = try await bridge.diagnoseError(repoDir: repoDir, errorText: payload)
+            let report = try await bridge.diagnoseError(repoDir: repoDir, errorText: payload, llmConfig: llmConfig)
             diagnoseReport = report
             selectedDirectionId = report.directions.first(where: { $0.recommended == true })?.id ?? report.directions.first?.id
         } catch {
@@ -148,7 +186,7 @@ final class HUDViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         do {
-            let report = try await bridge.diagnoseGitDiff(repoDir: repoDir)
+            let report = try await bridge.diagnoseGitDiff(repoDir: repoDir, llmConfig: llmConfig)
             diagnoseReport = report
             selectedDirectionId = report.directions.first(where: { $0.recommended == true })?.id ?? report.directions.first?.id
         } catch {

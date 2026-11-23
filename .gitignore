@@ -6,8 +6,9 @@ dist/
 build/
 *.tsbuildinfo
 
-# Local GlassBox incremental index cache
+# Local CodeSight incremental index cache
 .glassbox/
+.codesight/
 
 # OS / Editor
 .DS_Store

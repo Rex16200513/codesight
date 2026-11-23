@@ -4,19 +4,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BUILD_DIR="$SCRIPT_DIR/dist"
-APP_BUNDLE="$BUILD_DIR/GlassBoxHUD.app"
+APP_BUNDLE="$BUILD_DIR/CodeSight.app"
 NODE_BIN="$(which node)"
 
-rm -rf "$APP_BUNDLE"
+rm -rf "$BUILD_DIR/GlassBoxHUD.app" "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
-echo "[GlassBox macOS HUD] Compiling native Swift 6 arm64 binary..."
+echo "[CodeSight macOS HUD] Compiling native Swift 6 arm64 binary..."
 swiftc \
   -O \
   -framework AppKit \
   -framework SwiftUI \
   -framework Foundation \
-  -o "$APP_BUNDLE/Contents/MacOS/GlassBoxHUD" \
+  -o "$APP_BUNDLE/Contents/MacOS/CodeSight" \
   "$SCRIPT_DIR/Sources/Models.swift" \
   "$SCRIPT_DIR/Sources/EngineBridge.swift" \
   "$SCRIPT_DIR/Sources/HUDViewModel.swift" \
@@ -30,17 +30,17 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
-  <string>GlassBox HUD</string>
+  <string>CodeSight</string>
   <key>CFBundleDisplayName</key>
-  <string>GlassBox HUD</string>
+  <string>CodeSight</string>
   <key>CFBundleIdentifier</key>
-  <string>dev.glassbox.macos.hud</string>
+  <string>dev.codesight.macos.hud</string>
   <key>CFBundleVersion</key>
-  <string>0.3.0</string>
+  <string>0.4.0</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.3.0</string>
+  <string>0.4.0</string>
   <key>CFBundleExecutable</key>
-  <string>GlassBoxHUD</string>
+  <string>CodeSight</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>LSMinimumSystemVersion</key>
@@ -49,9 +49,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
   <true/>
   <key>NSHighResolutionCapable</key>
   <true/>
-  <key>GlassBoxNodePath</key>
+  <key>CodeSightNodePath</key>
   <string>${NODE_BIN}</string>
-  <key>GlassBoxEngineRoot</key>
+  <key>CodeSightEngineRoot</key>
   <string>${REPO_ROOT}</string>
 </dict>
 </plist>
@@ -60,4 +60,4 @@ EOF
 codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null 2>&1 || true
 
 echo "✓ Built native macOS Floating HUD: $APP_BUNDLE"
-echo "  Binary size: $(du -sh "$APP_BUNDLE/Contents/MacOS/GlassBoxHUD" | awk '{print $1}')"
+echo "  Binary size: $(du -sh "$APP_BUNDLE/Contents/MacOS/CodeSight" | awk '{print $1}')"
