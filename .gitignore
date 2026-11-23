@@ -6,9 +6,10 @@ dist/
 build/
 *.tsbuildinfo
 
-# Local CodeSight incremental index cache
+# Local CodeSight incremental index cache & machine-specific installed plugin paths
 .glassbox/
 .codesight/
+.agents/
 
 # OS / Editor
 .DS_Store
