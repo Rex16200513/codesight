@@ -108,6 +108,10 @@ export interface VisualProjectMapPayload {
 function inferPrototypeKind(file: IndexedFileNode, zoneKind: ZoneKind): PrototypeVisualKind {
   const lower = `${file.path} ${file.name}`.toLowerCase();
 
+  if (file.layer === 'server-api' || /pages\/background\//.test(lower)) {
+    return 'api-server';
+  }
+
   if (
     zoneKind === 'frontend' ||
     file.layer === 'ui-component' ||

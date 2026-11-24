@@ -1117,8 +1117,99 @@ export function renderVisualProjectMapHtml(
       }
     }
 
+    function renderRelationGraphSvg(node) {
+      const isFault = Boolean(DATA.activeDiagnosis && DATA.activeDiagnosis.targetNodeId === node.id);
+      const focusStroke = isFault ? 'var(--cs-red)' : 'var(--cs-blue)';
+      const focusFill = isFault ? 'var(--cs-red-soft)' : 'var(--cs-blue-soft)';
+      const downColor = isFault ? 'var(--cs-red)' : 'var(--cs-amber)';
+
+      const trimLbl = (p, maxLen) => {
+        const base = shortName(p).replace(/\.(tsx|jsx|ts|js|py|go|rs)$/, '');
+        return base.length > maxLen ? base.slice(0, maxLen - 1) + '…' : base;
+      };
+
+      const packSide = (arr, maxLen) => {
+        if (arr.length <= 3) return arr.map(p => trimLbl(p, maxLen));
+        return [trimLbl(arr[0], maxLen), trimLbl(arr[1], maxLen), '+' + (arr.length - 2)];
+      };
+
+      const hasUp = node.upstreamPaths.length > 0;
+      const hasDown = node.directDownstreamPaths.length > 0;
+      const selfLbl = trimLbl(node, hasUp && hasDown ? 8 : 10);
+
+      const ySlots = (n) => {
+        if (n === 1) return [50];
+        if (n === 2) return [31, 69];
+        return [20, 50, 80];
+      };
+
+      const parts = [
+        '<defs>' +
+          '<marker id="cs-mg-b" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4.2" markerHeight="4.2" orient="auto"><path d="M1 1L5 3L1 5" fill="none" stroke="var(--cs-blue)" stroke-width="1.3" stroke-linecap="round"/></marker>' +
+          '<marker id="cs-mg-d" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4.2" markerHeight="4.2" orient="auto"><path d="M1 1L5 3L1 5" fill="none" stroke="' + downColor + '" stroke-width="1.3" stroke-linecap="round"/></marker>' +
+        '</defs>'
+      ];
+
+      const drawNode = (x, yCenter, w, h, lbl, fill, stroke, textFill, bold) => {
+        const y = yCenter - h / 2;
+        parts.push(
+          '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="5.5" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + (bold ? '1.25' : '0.9') + '"/>' +
+          '<text x="' + (x + w / 2) + '" y="' + (yCenter + 2.6) + '" text-anchor="middle" font-size="' + (bold ? '7.2' : '6.5') + '" font-weight="' + (bold ? '600' : '500') + '" font-family="ui-monospace,SF Mono,Menlo,monospace" fill="' + textFill + '">' + escHtml(lbl) + '</text>'
+        );
+      };
+
+      if (hasUp && hasDown) {
+        const ups = packSide(node.upstreamPaths, 7);
+        const downs = packSide(node.directDownstreamPaths, 7);
+        const upYs = ySlots(ups.length);
+        const downYs = ySlots(downs.length);
+
+        ups.forEach((lbl, i) => {
+          const y = upYs[i];
+          parts.push('<path d="M 46 ' + y + ' C 52 ' + y + ', 52 50, 57 50" fill="none" stroke="var(--cs-blue)" stroke-width="1.15" stroke-dasharray="2.6 2.2" marker-end="url(#cs-mg-b)"/>');
+          drawNode(3, y, 43, 18, lbl, 'var(--cs-card)', 'var(--cs-hairline-strong)', 'var(--cs-muted)', false);
+        });
+        downs.forEach((lbl, i) => {
+          const y = downYs[i];
+          parts.push('<path d="M 106 50 C 111 50, 111 ' + y + ', 116 ' + y + '" fill="none" stroke="' + downColor + '" stroke-width="1.15" stroke-dasharray="2.6 2.2" marker-end="url(#cs-mg-d)"/>');
+          drawNode(118, y, 43, 18, lbl, 'var(--cs-card)', 'var(--cs-hairline-strong)', 'var(--cs-ink)', false);
+        });
+        drawNode(58, 50, 48, 24, selfLbl, focusFill, focusStroke, focusStroke, true);
+      } else if (hasDown) {
+        const downs = packSide(node.directDownstreamPaths, 10);
+        const downYs = ySlots(downs.length);
+        downs.forEach((lbl, i) => {
+          const y = downYs[i];
+          parts.push('<path d="M 66 50 C 78 50, 78 ' + y + ', 89 ' + y + '" fill="none" stroke="' + downColor + '" stroke-width="1.2" stroke-dasharray="2.8 2.2" marker-end="url(#cs-mg-d)"/>');
+          drawNode(91, y, 66, 19, lbl, 'var(--cs-card)', 'var(--cs-hairline-strong)', 'var(--cs-ink)', false);
+        });
+        drawNode(7, 50, 59, 26, selfLbl, focusFill, focusStroke, focusStroke, true);
+      } else if (hasUp) {
+        const ups = packSide(node.upstreamPaths, 10);
+        const upYs = ySlots(ups.length);
+        ups.forEach((lbl, i) => {
+          const y = upYs[i];
+          parts.push('<path d="M 73 ' + y + ' C 84 ' + y + ', 84 50, 95 50" fill="none" stroke="var(--cs-blue)" stroke-width="1.2" stroke-dasharray="2.8 2.2" marker-end="url(#cs-mg-b)"/>');
+          drawNode(7, y, 66, 19, lbl, 'var(--cs-card)', 'var(--cs-hairline-strong)', 'var(--cs-muted)', false);
+        });
+        drawNode(97, 50, 60, 26, selfLbl, focusFill, focusStroke, focusStroke, true);
+      } else {
+        parts.push('<rect x="34" y="28" width="96" height="44" rx="10" fill="none" stroke="var(--cs-hairline-strong)" stroke-dasharray="3 3"/>');
+        drawNode(44, 50, 76, 26, selfLbl, focusFill, focusStroke, focusStroke, true);
+      }
+
+      return '<svg viewBox="0 0 164 100" width="150">' + parts.join('') + '</svg>';
+    }
+
     function renderPrototypeSvg(node) {
       const k = node.prototypeKind;
+      const isUiKind = k === 'ui-modal' || k === 'ui-hud' || k === 'ui-card-flow' || k === 'ui-card-diff' || k === 'ui-card' || k === 'ui-page';
+
+      // Non-UI modules (Backend Services, Core Logic, Shared Schemas, CLI) render a real local dependency relation mini-graph!
+      if (!isUiKind) {
+        return renderRelationGraphSvg(node);
+      }
+
       const spec = node.prototypeSpec;
       if (spec && Array.isArray(spec.elements) && spec.elements.length > 0) {
         const els = spec.elements.slice(0, 4);
@@ -1160,35 +1251,14 @@ export function renderVisualProjectMapHtml(
           '<rect x="87" y="67" width="52" height="11" rx="4" fill="var(--cs-ink)" opacity="0.82"/>' +
         '</svg>';
       }
-      if (k === 'ui-card-flow' || k === 'ui-card-diff' || k === 'ui-page' || k === 'ui-card') {
-        return '<svg viewBox="0 0 160 96" width="144">' +
-          '<rect x="8" y="8" width="144" height="80" rx="9" fill="var(--cs-card)" stroke="var(--cs-hairline-strong)"/>' +
-          '<circle cx="19" cy="18" r="2.2" fill="var(--cs-faint)"/>' +
-          '<circle cx="27" cy="18" r="2.2" fill="var(--cs-faint)"/>' +
-          '<line x1="8" y1="27" x2="152" y2="27" stroke="var(--cs-hairline)"/>' +
-          '<rect x="18" y="35" width="70" height="44" rx="5" fill="var(--cs-canvas)"/>' +
-          '<rect x="95" y="35" width="47" height="19" rx="5" fill="var(--cs-blue-soft)" stroke="var(--cs-blue)" stroke-width="0.9"/>' +
-          '<rect x="95" y="60" width="47" height="19" rx="5" fill="var(--cs-canvas)"/>' +
-        '</svg>';
-      }
-      if (k === 'api-server') {
-        return '<svg viewBox="0 0 160 96" width="144">' +
-          '<rect x="8" y="32" width="34" height="32" rx="7" fill="var(--cs-card)" stroke="var(--cs-hairline-strong)"/>' +
-          '<path d="M44 48 H60" stroke="var(--cs-blue)" stroke-width="1.3" stroke-dasharray="3 2.5"/>' +
-          '<rect x="62" y="22" width="38" height="52" rx="8" fill="var(--cs-card)" stroke="var(--cs-blue)" stroke-width="1.2"/>' +
-          '<line x1="70" y1="38" x2="92" y2="38" stroke="var(--cs-ink)" stroke-width="1.5" opacity="0.5"/>' +
-          '<line x1="70" y1="48" x2="88" y2="48" stroke="var(--cs-muted)" stroke-width="1.3" opacity="0.45"/>' +
-          '<line x1="70" y1="58" x2="92" y2="58" stroke="var(--cs-muted)" stroke-width="1.3" opacity="0.35"/>' +
-          '<path d="M102 48 H118" stroke="var(--cs-muted)" stroke-width="1.3" stroke-dasharray="3 2.5"/>' +
-          '<rect x="120" y="32" width="32" height="32" rx="7" fill="var(--cs-card)" stroke="var(--cs-hairline-strong)"/>' +
-        '</svg>';
-      }
       return '<svg viewBox="0 0 160 96" width="144">' +
-        '<rect x="18" y="16" width="124" height="64" rx="9" fill="var(--cs-card)" stroke="var(--cs-hairline-strong)"/>' +
-        '<rect x="30" y="29" width="52" height="5" rx="2.5" fill="var(--cs-ink)" opacity="0.55"/>' +
-        '<rect x="30" y="42" width="100" height="4" rx="2" fill="var(--cs-muted)" opacity="0.28"/>' +
-        '<rect x="30" y="52" width="84" height="4" rx="2" fill="var(--cs-muted)" opacity="0.22"/>' +
-        '<rect x="30" y="62" width="64" height="4" rx="2" fill="var(--cs-blue)" opacity="0.55"/>' +
+        '<rect x="8" y="8" width="144" height="80" rx="9" fill="var(--cs-card)" stroke="var(--cs-hairline-strong)"/>' +
+        '<circle cx="19" cy="18" r="2.2" fill="var(--cs-faint)"/>' +
+        '<circle cx="27" cy="18" r="2.2" fill="var(--cs-faint)"/>' +
+        '<line x1="8" y1="27" x2="152" y2="27" stroke="var(--cs-hairline)"/>' +
+        '<rect x="18" y="35" width="70" height="44" rx="5" fill="var(--cs-canvas)"/>' +
+        '<rect x="95" y="35" width="47" height="19" rx="5" fill="var(--cs-blue-soft)" stroke="var(--cs-blue)" stroke-width="0.9"/>' +
+        '<rect x="95" y="60" width="47" height="19" rx="5" fill="var(--cs-canvas)"/>' +
       '</svg>';
     }
 
