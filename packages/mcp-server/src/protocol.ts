@@ -19,7 +19,7 @@ export interface UiResourceEntry {
 
 export const SERVER_INFO = {
   name: 'codesight',
-  version: '1.0.2',
+  version: '1.0.3',
 };
 
 export const TOOL_DEFINITIONS = [

@@ -1,0 +1,36 @@
+name: Bug Report
+description: Report a bug in CodeSight (MCP server, GraphRAG engine, visual cards, CLI, or macOS HUD)
+title: '[Bug]: '
+labels: ['bug']
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Area
+      options:
+        - Visual Cards / MCP Apps UI
+        - MCP Server (Stdio / Streamable HTTP)
+        - GraphRAG / AST Engine (@codesight/core)
+        - CLI / Installer (@codesight/cli)
+        - Native macOS Floating HUD (CodeSight.app)
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: AI Host / Environment
+      placeholder: e.g. Cursor, Claude Code, Antigravity, ChatGPT Apps, Node 22, macOS 15
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: What happened & how to reproduce?
+      description: Clear steps to reproduce and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error output / screenshots (optional)
+      render: shell

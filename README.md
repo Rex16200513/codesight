@@ -3,7 +3,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rex16200513/codesight/releases"><img src="https://img.shields.io/badge/release-v1.0.1-111111?style=flat-square" alt="Release v1.0.1" /></a>
+  <a href="https://github.com/Rex16200513/codesight/actions/workflows/ci.yml"><img src="https://github.com/Rex16200513/codesight/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/Rex16200513/codesight/releases"><img src="https://img.shields.io/github/v/release/Rex16200513/codesight?style=flat-square&color=111111" alt="Latest Release" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-111111?style=flat-square" alt="MIT License" /></a>
   <img src="https://img.shields.io/badge/node-%3E%3D18-111111?style=flat-square" alt="Node >= 18" />
   <img src="https://img.shields.io/badge/languages-TS%20%7C%20JS%20%7C%20Python-0071E3?style=flat-square" alt="TypeScript, JavaScript, Python" />
@@ -90,8 +91,8 @@ Automatically detects **Frontend**, **Backend**, and **Shared / Core** separatio
   <img src="./assets/screenshots/01-architecture-map.png" alt="Layered Architecture Map" width="800" />
 </p>
 
-### 2. Inspect Prototypes & Direct Callers Without Opening 40 Tabs
-Click any module to open a frosted detail sheet with an auto-inferred **UI wireframe or flow prototype**, direct caller count, clickable `Uses ↗` / `Used by ↗` navigation chips, and one-click scoped AI edit/explain prompts.
+### 2. UI Wireframes, Non-UI Relation Graphs & 0-Token Split Tips
+Click any UI module to preview a **typed mini-Figma wireframe** (header, tabs, toggles, sliders, chips, lists, actions — refreshable on demand via the `AI UI` button), or click any backend/core file to inspect its real **local AST dependency mini-graph**. Oversized or high-impact modules are flagged with a subtle amber dot (`● Large`) and a 1-click **Safe Split** prompt that closes the loop by re-running CodeSight after edits.
 
 <p align="center">
   <img src="./assets/screenshots/02-prototype-modal.png" alt="Prototype Modal" width="800" />

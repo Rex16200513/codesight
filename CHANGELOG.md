@@ -2,6 +2,17 @@
 
 All notable changes to **CodeSight** are documented in this file.
 
+## [1.0.3] - 2026-11-24
+
+### Added
+- **GitHub CI & Automated Release Pipelines**: Added `.github/workflows/ci.yml` (Node 22 full build/typecheck/tests, Node 18 & 20 compiled runtime smoke checks, and native macOS-15 Swift HUD build verification), `.github/workflows/release.yml` (auto-packages `CodeSight-macOS-arm64.zip` + `SHA256SUMS.txt` and publishes GitHub Releases on `v*` tags), issue/PR templates, and Dependabot.
+- **Standard MCP Apps Bidirectional Bridge**: Interactive cards now support standard JSON-RPC `tools/call` & `ui/message` callbacks to MCP Apps hosts alongside in-card BYOK API key configuration and 1-click UI prototype refresh.
+- **Closed-Loop Post-Edit Verification Prompts**: Every action, split-refactor, and surgical-fix prompt now instructs the AI agent to re-run `codesight_map` / `codesight_diagnose(useGit: true)` after editing so users automatically verify zero regressions and see the refreshed visual map.
+
+### Refactored & Fixed
+- **Safe Split of MCP Server (`server.ts`: 623 → 128 lines)**: Extracted `protocol.ts`, `toolHandlers.ts`, and `transports.ts` while re-exporting all existing public symbols cleanly.
+- **Zero Scroll-Jump & Instant Reliable Copy**: Fixed hidden-textarea `focus()` causing scroll-to-top jumps in embedded chat iframes (`preventScroll: true`), and preserved synchronous browser user-gesture activation so clipboard copies succeed immediately on click.
+
 ## [1.0.2] - 2026-11-24
 
 ### Added

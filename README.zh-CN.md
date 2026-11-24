@@ -3,7 +3,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rex16200513/codesight/releases"><img src="https://img.shields.io/badge/release-v1.0.1-111111?style=flat-square" alt="Release v1.0.1" /></a>
+  <a href="https://github.com/Rex16200513/codesight/actions/workflows/ci.yml"><img src="https://github.com/Rex16200513/codesight/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/Rex16200513/codesight/releases"><img src="https://img.shields.io/github/v/release/Rex16200513/codesight?style=flat-square&color=111111" alt="Latest Release" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-111111?style=flat-square" alt="MIT License" /></a>
   <img src="https://img.shields.io/badge/node-%3E%3D18-111111?style=flat-square" alt="Node >= 18" />
   <img src="https://img.shields.io/badge/语言-TS%20%7C%20JS%20%7C%20Python-0071E3?style=flat-square" alt="TS, JS, Python" />
@@ -90,8 +91,8 @@ CodeSight 不是把代码随便切块丢进向量库，而是在本地对代码�
   <img src="./assets/screenshots/01-architecture-map.png" alt="竖排架构图" width="800" />
 </p>
 
-### 2. 点击任意模块：原型示意 + 上下游跳转
-点击模块弹出毛玻璃详情页，自动推断并展示 **界面原型线框 / 服务流转图**、直接调用方数量、可点击的 `Uses ↗` / `Used by ↗` 跳转标签，以及一键生成给 AI 的精准修改/讲解指令。
+### 2. UI 线框原型、非 UI 关系小图与 0-Token 拆分预警
+点击前端 UI 模块，直接预览**控件级 UI 线框原型**（支持顶栏与弹窗内 `✦ AI 原型` 一键刷新）；点击后端 / 核心逻辑模块，自动展示真实的 **AST 局部依赖关系小图**。体量过大或高耦合文件会以底部图例 `● 建议拆分` 标记，并提供一键**安全拆分指令**（改完后自动提示 AI 再次调用 CodeSight 复验）。
 
 <p align="center">
   <img src="./assets/screenshots/02-prototype-modal.png" alt="原型弹窗" width="800" />
