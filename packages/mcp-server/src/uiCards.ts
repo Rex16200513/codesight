@@ -1,10 +1,12 @@
 import type {
+  CodeSightConfig,
   SymbolTraceReport,
   VisualProjectMapPayload,
 } from '@codesight/core/engine';
+import { DEFAULT_CODESIGHT_CONFIG } from '@codesight/core/engine';
 
 function esc(str: string): string {
-  return str
+  return String(str ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -12,155 +14,218 @@ function esc(str: string): string {
 }
 
 /**
- * CodeSight v0.8.3 Vertical Architecture Board + Directional Dashed SVG Flow + Clean Modal:
- * 1. Three vertical side-by-side columns (Frontend | Backend | Shared Core) inside ONE big card.
- * 2. Clean directional dashed SVG lines (`stroke-dasharray: 4 3.5` + anchor dots + arrowheads)
- *    connecting ONLY the hovered/focused module's direct 1-hop upstream/downstream relations.
- * 3. Crystal-clear Modal distinguishing Read-Only Info vs Clickable Controls:
- *    - Exploration Mode: NO filler radio choices! Clean 2-button action bar ("让 AI 调整此文件" / "让 AI 讲讲这段代码").
- *    - Error Mode: Radio decision cards ONLY when real architectural choices exist.
- *    - Related file jump pills carry explicit `↗` affordance so interactivity is unmistakable.
+ * Apple / OpenAI craft stylesheet:
+ * - Zero visual noise, hairline borders, crisp typographic hierarchy, pure neutral canvas
+ * - Works cleanly inside Orca/Claude/ChatGPT MCP App iframes AND standalone local browser preview
+ * - Scopes all custom tokens on `.cs-shell, .cs-backdrop` so host `:root` tokens are never overridden
  */
-const BOARD_CSS = `
-  .cs-board,
-  .cs-modal-backdrop {
-    --cs-card: var(--card, #ffffff);
-    --cs-surface: var(--muted, #f4f3ef);
-    --cs-ink: var(--foreground, #1c1917);
-    --cs-muted: var(--muted-foreground, #6b6560);
-    --cs-border: var(--border, rgba(28, 25, 23, 0.12));
-    --cs-border-strong: rgba(28, 25, 23, 0.22);
-    --cs-accent: var(--primary, #111827);
-    --cs-accent-fg: var(--primary-foreground, #ffffff);
-    --cs-blue: #2563eb;
-    --cs-blue-soft: rgba(37, 99, 235, 0.1);
-    --cs-violet: #7c3aed;
-    --cs-violet-soft: rgba(124, 58, 237, 0.1);
-    --cs-red: #dc2626;
-    --cs-red-soft: rgba(220, 38, 38, 0.12);
-    --cs-amber: #d97706;
-    --cs-amber-soft: rgba(217, 119, 6, 0.12);
-    --cs-green: #059669;
-    --cs-green-soft: rgba(5, 150, 105, 0.11);
+const APPLE_CSS = `
+  .cs-shell, .cs-backdrop {
+    --cs-bg: #ffffff;
+    --cs-canvas: #f5f5f7;
+    --cs-card: #ffffff;
+    --cs-ink: #1d1d1f;
+    --cs-muted: #6e6e73;
+    --cs-faint: #98989d;
+    --cs-hairline: rgba(0, 0, 0, 0.08);
+    --cs-hairline-strong: rgba(0, 0, 0, 0.14);
+    --cs-primary: #1d1d1f;
+    --cs-primary-fg: #ffffff;
+    --cs-blue: #0071e3;
+    --cs-blue-soft: rgba(0, 113, 227, 0.08);
+    --cs-amber: #c26d0a;
+    --cs-amber-soft: rgba(194, 109, 10, 0.09);
+    --cs-red: #d92d20;
+    --cs-red-soft: rgba(217, 45, 32, 0.09);
+    --cs-green: #16803c;
+    --cs-green-soft: rgba(22, 128, 60, 0.09);
+    --cs-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --cs-sheet-shadow: 0 24px 60px rgba(0, 0, 0, 0.16), 0 0 0 0.5px rgba(0, 0, 0, 0.08);
   }
   @media (prefers-color-scheme: dark) {
-    .cs-board,
-    .cs-modal-backdrop {
-      --cs-card: var(--card, #242426);
-      --cs-surface: var(--muted, #1c1c1e);
-      --cs-border-strong: rgba(255, 255, 255, 0.22);
-      --cs-blue: #60a5fa;
-      --cs-blue-soft: rgba(96, 165, 250, 0.16);
-      --cs-violet: #a78bfa;
-      --cs-violet-soft: rgba(167, 139, 250, 0.16);
+    .cs-shell, .cs-backdrop {
+      --cs-bg: #111113;
+      --cs-canvas: #161618;
+      --cs-card: #1c1c1f;
+      --cs-ink: #f5f5f7;
+      --cs-muted: #a1a1a6;
+      --cs-faint: #6e6e73;
+      --cs-hairline: rgba(255, 255, 255, 0.09);
+      --cs-hairline-strong: rgba(255, 255, 255, 0.16);
+      --cs-primary: #f5f5f7;
+      --cs-primary-fg: #111113;
+      --cs-blue: #2997ff;
+      --cs-blue-soft: rgba(41, 151, 255, 0.14);
+      --cs-amber: #f59e0b;
+      --cs-amber-soft: rgba(245, 158, 11, 0.14);
       --cs-red: #f87171;
-      --cs-red-soft: rgba(248, 113, 113, 0.17);
-      --cs-amber: #fbbf24;
-      --cs-amber-soft: rgba(251, 191, 36, 0.15);
+      --cs-red-soft: rgba(248, 113, 113, 0.14);
       --cs-green: #34d399;
-      --cs-green-soft: rgba(52, 211, 153, 0.15);
+      --cs-green-soft: rgba(52, 211, 153, 0.14);
+      --cs-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
+      --cs-sheet-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 0.5px rgba(255, 255, 255, 0.12);
     }
   }
+
   * { box-sizing: border-box; }
-  body {
+  html, body {
     margin: 0;
-    padding: 6px;
-    font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif);
-    background: var(--background, transparent);
-    color: var(--foreground, #1c1917);
+    padding: 0;
+    background: transparent;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "PingFang SC", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
+    color: var(--cs-ink);
   }
 
-  .cs-board {
-    position: relative;
-    max-width: 960px;
-    background: var(--cs-card);
-    border: 1px solid var(--cs-border);
-    border-radius: 18px;
+  .cs-shell {
+    background: var(--cs-bg);
+    border: 1px solid var(--cs-hairline);
+    border-radius: 16px;
     overflow: hidden;
-    box-shadow: 0 6px 28px rgba(0, 0, 0, 0.05);
+    color: var(--cs-ink);
   }
 
-  .cs-topbar {
+  /* Minimal Apple/OpenAI Header */
+  .cs-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--cs-border);
-    flex-wrap: wrap;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--cs-hairline);
+    background: var(--cs-bg);
   }
   .cs-brand {
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: 8px;
+    min-width: 0;
   }
-  .cs-logo {
-    width: 24px;
-    height: 24px;
-    border-radius: 7px;
-    background: var(--cs-blue-soft);
-    color: var(--cs-blue);
-    display: grid;
-    place-items: center;
-  }
-  .cs-title {
-    font-size: 13.5px;
-    font-weight: 650;
-    color: var(--cs-ink);
-  }
-  .cs-sub {
-    font-size: 11px;
-    color: var(--cs-muted);
-    margin-top: 1px;
-  }
-  .cs-legend {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 11px;
-    color: var(--cs-muted);
-  }
-  .cs-legend-item {
+  .cs-mark {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: var(--cs-primary);
+    color: var(--cs-primary-fg);
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    justify-content: center;
+    flex-shrink: 0;
   }
-  .cs-dash-sample {
-    width: 14px;
-    height: 0;
-    border-top: 1.8px dashed currentColor;
-    display: inline-block;
+  .cs-brand-name {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--cs-ink);
+  }
+  .cs-brand-repo {
+    font-size: 12px;
+    color: var(--cs-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cs-bar-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
   }
 
-  .cs-fault-banner {
+  .cs-seg {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--cs-canvas);
+    border: 1px solid var(--cs-hairline);
+  }
+  .cs-seg button {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--cs-muted);
+    font-size: 10.5px;
+    font-weight: 550;
+    padding: 3px 7px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.14s ease;
+  }
+  .cs-seg button.is-on {
+    background: var(--cs-card);
+    color: var(--cs-ink);
+    box-shadow: var(--cs-shadow);
+  }
+
+  .cs-icon-btn {
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--cs-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+  }
+  .cs-icon-btn:hover {
+    background: var(--cs-canvas);
+    color: var(--cs-ink);
+    border-color: var(--cs-hairline);
+  }
+
+  /* Compact Fault Strip (only when active error) */
+  .cs-fault-strip {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
     padding: 9px 16px;
     background: var(--cs-red-soft);
-    border-bottom: 1px solid rgba(220, 38, 38, 0.2);
+    border-bottom: 1px solid var(--cs-hairline);
     font-size: 12px;
-    color: var(--cs-ink);
-    flex-wrap: wrap;
   }
-  .cs-fault-btn {
+  .cs-fault-msg {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    color: var(--cs-ink);
+  }
+  .cs-fault-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--cs-red);
+    flex-shrink: 0;
+  }
+  .cs-fault-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 500;
+  }
+  .cs-fault-act {
     appearance: none;
     border: none;
-    border-radius: 8px;
-    padding: 5px 11px;
+    border-radius: 999px;
+    padding: 4px 11px;
     background: var(--cs-red);
     color: #fff;
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
+    flex-shrink: 0;
   }
+  .cs-fault-act:hover { opacity: 0.9; }
 
-  /* Board Stage + Directional Dashed SVG Overlay */
+  /* Vertical Layered Architecture Board */
   .cs-stage {
     position: relative;
-    background: var(--cs-surface);
+    background: var(--cs-canvas);
   }
   .cs-svg {
     position: absolute;
@@ -168,407 +233,417 @@ const BOARD_CSS = `
     width: 100%;
     height: 100%;
     pointer-events: none;
+    z-index: 3;
     overflow: visible;
-    z-index: 4;
+  }
+  .cs-edge-idle {
+    fill: none;
+    stroke: var(--cs-faint);
+    stroke-width: 1.1;
+    stroke-dasharray: 3.5 3.5;
+    opacity: 0.34;
   }
   .cs-edge-up {
     fill: none;
     stroke: var(--cs-blue);
-    stroke-width: 1.6;
+    stroke-width: 1.5;
     stroke-dasharray: 4 3.5;
     stroke-linecap: round;
-    opacity: 0.85;
   }
   .cs-edge-down {
     fill: none;
     stroke: var(--cs-amber);
-    stroke-width: 1.65;
+    stroke-width: 1.5;
     stroke-dasharray: 4 3.5;
     stroke-linecap: round;
-    opacity: 0.9;
   }
   .cs-edge-fault {
     fill: none;
     stroke: var(--cs-red);
     stroke-width: 1.75;
-    stroke-dasharray: 4 3.5;
+    stroke-dasharray: 4.5 3;
     stroke-linecap: round;
-    opacity: 0.92;
   }
 
-  /* Three Vertical Side-by-Side Columns Inside ONE Big Card */
-  .cs-columns {
+  .cs-cols {
     position: relative;
     z-index: 2;
     display: grid;
     grid-template-columns: repeat(var(--zone-count, 3), minmax(0, 1fr));
   }
-  @media (max-width: 380px) {
-    .cs-columns { grid-template-columns: 1fr; }
-    .cs-col + .cs-col { border-left: none !important; border-top: 1px dashed var(--cs-border-strong); }
+  @media (max-width: 390px) {
+    .cs-cols { grid-template-columns: 1fr; }
   }
   .cs-col {
-    padding: 12px 12px 14px;
+    padding: 14px 12px 16px;
     display: flex;
     flex-direction: column;
-    gap: 11px;
+    gap: 12px;
     min-width: 0;
   }
   .cs-col + .cs-col {
-    border-left: 1px dashed var(--cs-border-strong);
+    border-left: 1px solid var(--cs-hairline);
   }
-  .cs-col.kind-frontend {
-    background: linear-gradient(180deg, rgba(37, 99, 235, 0.05), transparent 45%);
-  }
-  .cs-col.kind-backend {
-    background: linear-gradient(180deg, rgba(124, 58, 237, 0.05), transparent 45%);
-  }
+
   .cs-col-head {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--cs-border);
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 0 3px;
   }
   .cs-col-title {
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
     color: var(--cs-ink);
   }
-  .cs-col-badge {
-    font-family: var(--font-mono, ui-monospace, Menlo, monospace);
-    font-size: 9.5px;
-    font-weight: 600;
-    padding: 1.5px 7px;
-    border-radius: 999px;
-    background: var(--cs-card);
-    border: 1px solid var(--cs-border);
-    color: var(--cs-muted);
-  }
-  .cs-col.kind-frontend .cs-col-badge {
-    color: var(--cs-blue);
-    background: var(--cs-blue-soft);
-    border-color: transparent;
-  }
-  .cs-col.kind-backend .cs-col-badge {
-    color: var(--cs-violet);
-    background: var(--cs-violet-soft);
-    border-color: transparent;
+  .cs-col-count {
+    font-size: 10.5px;
+    color: var(--cs-faint);
+    font-variant-numeric: tabular-nums;
   }
 
   .cs-group {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 5px;
   }
-  .cs-group-title {
-    font-size: 10.5px;
-    font-weight: 600;
-    color: var(--cs-muted);
-    padding: 0 2px;
+  .cs-group-label {
+    font-size: 10px;
+    font-weight: 550;
+    color: var(--cs-faint);
+    padding: 0 3px;
+    letter-spacing: 0.01em;
   }
-  .cs-file-list {
+  .cs-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 5px;
   }
 
-  .cs-mod {
+  /* Crisp Single-Line Module Row (Minimal Text!) */
+  .cs-row {
     appearance: none;
     width: 100%;
     text-align: left;
-    padding: 7.5px 9px;
-    border-radius: 10px;
-    border: 1px solid var(--cs-border);
-    background: var(--cs-card);
-    color: var(--cs-ink);
-    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 6px;
-    transition: border-color 0.14s ease, transform 0.12s ease, opacity 0.15s ease, box-shadow 0.14s ease;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.025);
+    gap: 8px;
+    padding: 7.5px 10px;
+    border-radius: 9px;
+    border: 1px solid var(--cs-hairline);
+    background: var(--cs-card);
+    color: var(--cs-ink);
+    cursor: pointer;
+    box-shadow: var(--cs-shadow);
+    transition: border-color 0.14s ease, background 0.14s ease, opacity 0.14s ease, transform 0.12s ease;
+    min-width: 0;
   }
-  .cs-mod:hover,
-  .cs-mod.is-focus {
-    border-color: var(--cs-blue);
-    box-shadow: 0 3px 10px rgba(37, 99, 235, 0.12);
+  .cs-row:hover {
+    border-color: var(--cs-hairline-strong);
+    transform: translateY(-0.5px);
   }
-  .cs-mod.is-dim { opacity: 0.34; }
-  .cs-mod.is-fault {
-    border-color: var(--cs-red);
-    background: var(--cs-red-soft);
-    opacity: 1;
-  }
-  .cs-mod.is-up {
+  .cs-row.is-focus {
     border-color: var(--cs-blue);
     background: var(--cs-blue-soft);
-    opacity: 1;
   }
-  .cs-mod.is-down {
+  .cs-row.is-up {
+    border-color: var(--cs-blue);
+  }
+  .cs-row.is-down {
     border-color: var(--cs-amber);
-    background: var(--cs-amber-soft);
-    opacity: 1;
   }
-  .cs-mod-left {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1.5px;
+  .cs-row.is-fault {
+    border-color: var(--cs-red);
+    background: var(--cs-red-soft);
   }
-  .cs-mod-name {
-    font-family: var(--font-mono, ui-monospace, Menlo, monospace);
-    font-size: 11px;
-    font-weight: 600;
+  .cs-row.is-dim {
+    opacity: 0.34;
+  }
+
+  .cs-row-name {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11.5px;
+    font-weight: 520;
     color: var(--cs-ink);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .cs-mod-role {
+  .cs-row-metric {
     font-size: 10px;
-    color: var(--cs-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .cs-mod-tag {
-    font-size: 9.5px;
-    font-weight: 600;
-    padding: 1.5px 5.5px;
-    border-radius: 999px;
+    font-weight: 550;
+    color: var(--cs-faint);
+    font-variant-numeric: tabular-nums;
     flex-shrink: 0;
   }
-  .cs-tag-fault { background: var(--cs-red); color: #fff; }
-  .cs-tag-hub { background: var(--cs-amber-soft); color: var(--cs-amber); }
-  .cs-tag-ui { background: var(--cs-blue-soft); color: var(--cs-blue); }
+  .cs-row.is-down .cs-row-metric,
+  .cs-row.is-focus .cs-row-metric {
+    color: var(--cs-amber);
+  }
+  .cs-dot-fault {
+    width: 6.5px;
+    height: 6.5px;
+    border-radius: 50%;
+    background: var(--cs-red);
+    flex-shrink: 0;
+  }
 
-  .cs-more-btn {
+  .cs-more {
     appearance: none;
-    border: 1px dashed var(--cs-border-strong);
+    border: none;
     background: transparent;
     color: var(--cs-muted);
     font-size: 10.5px;
-    padding: 4.5px 8px;
-    border-radius: 8px;
+    font-weight: 500;
+    padding: 4px 4px;
+    text-align: left;
     cursor: pointer;
-    text-align: center;
+    border-radius: 6px;
   }
-  .cs-more-btn:hover { color: var(--cs-ink); }
+  .cs-more:hover { color: var(--cs-ink); }
 
-  /* Floating Modal Detail Overlay */
-  .cs-modal-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(15, 17, 21, 0.36);
-    backdrop-filter: blur(5px);
-    -webkit-backdrop-filter: blur(5px);
-    z-index: 50;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 12px;
-  }
-  .cs-modal-backdrop.is-open { display: flex; }
-
-  .cs-modal {
-    width: min(600px, 100%);
-    max-height: calc(100vh - 20px);
-    overflow-y: auto;
-    background: var(--cs-card);
-    color: var(--cs-ink);
-    border: 1px solid var(--cs-border-strong);
-    border-radius: 18px;
-    box-shadow: 0 22px 58px rgba(0, 0, 0, 0.22);
-    display: flex;
-    flex-direction: column;
-  }
-  .cs-modal-head {
+  /* Subtle Footer Status Line (Hover Preview, 1 Line) */
+  .cs-foot {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 11px 16px;
-    border-bottom: 1px solid var(--cs-border);
+    padding: 8px 16px;
+    border-top: 1px solid var(--cs-hairline);
+    background: var(--cs-bg);
+    font-size: 11px;
+    color: var(--cs-muted);
+    min-height: 33px;
   }
-  .cs-breadcrumb {
+  .cs-foot-hint {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cs-foot-legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+    font-size: 10.5px;
+  }
+  .cs-dash {
+    display: inline-block;
+    width: 12px;
+    border-top: 1.5px dashed currentColor;
+    vertical-align: middle;
+    margin-right: 4px;
+  }
+
+  /* Apple Frosted Sheet Backdrop */
+  .cs-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  .cs-backdrop.is-open { display: flex; }
+
+  .cs-sheet {
+    width: min(500px, 100%);
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    background: var(--cs-bg);
+    color: var(--cs-ink);
+    border: 1px solid var(--cs-hairline);
+    border-radius: 18px;
+    box-shadow: var(--cs-sheet-shadow);
+    animation: cs-sheet-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @keyframes cs-sheet-in {
+    from { opacity: 0; transform: translateY(6px) scale(0.985); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .cs-sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--cs-hairline);
+  }
+  .cs-crumb {
     display: flex;
     align-items: center;
     gap: 5px;
     font-size: 11.5px;
     color: var(--cs-muted);
-    flex-wrap: wrap;
+    min-width: 0;
+    overflow: hidden;
   }
-  .cs-breadcrumb strong {
+  .cs-crumb strong {
     color: var(--cs-ink);
-    font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .cs-close-btn {
+  .cs-close {
     appearance: none;
-    width: 26px;
-    height: 26px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
-    border: 1px solid var(--cs-border);
-    background: var(--cs-surface);
+    border: none;
+    background: var(--cs-canvas);
     color: var(--cs-muted);
-    font-size: 13px;
+    font-size: 12px;
     cursor: pointer;
-    display: grid;
-    place-items: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
   }
-  .cs-close-btn:hover { color: var(--cs-ink); }
+  .cs-close:hover { color: var(--cs-ink); }
 
-  .cs-modal-body {
-    padding: 14px 16px;
+  /* Modal Body: Clean Info vs Clickable Navigation */
+  .cs-sheet-body {
+    padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-  }
-
-  /* Read-Only Information Section */
-  .cs-info-grid {
-    display: grid;
-    grid-template-columns: 196px minmax(0, 1fr);
     gap: 14px;
-    align-items: stretch;
   }
-  @media (max-width: 520px) {
-    .cs-info-grid { grid-template-columns: 1fr; }
-  }
-  .cs-proto-stage {
-    border-radius: 12px;
-    border: 1px solid var(--cs-border);
-    background: var(--cs-surface);
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .cs-proto-kicker {
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--cs-muted);
-    display: flex;
+  .cs-detail-grid {
+    display: grid;
+    grid-template-columns: 164px minmax(0, 1fr);
+    gap: 16px;
     align-items: center;
-    justify-content: space-between;
   }
-  .cs-wireframe {
-    flex: 1;
+  @media (max-width: 440px) {
+    .cs-detail-grid { grid-template-columns: 1fr; }
+  }
+  .cs-proto {
+    border: 1px solid var(--cs-hairline);
+    border-radius: 12px;
+    background: var(--cs-canvas);
+    padding: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     min-height: 112px;
   }
-  .cs-info-col {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .cs-status-pill {
-    align-self: flex-start;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2.5px 9px;
-    border-radius: 999px;
-  }
-  .cs-modal-title {
-    margin: 0;
-    font-size: 15px;
-    font-weight: 650;
-    line-height: 1.4;
-    color: var(--cs-ink);
-  }
-  .cs-modal-desc {
-    margin: 0;
-    font-size: 12.5px;
-    line-height: 1.55;
-    color: var(--cs-muted);
-  }
-  .cs-safe-note {
-    font-size: 11.5px;
-    color: var(--cs-green);
-    font-weight: 500;
-  }
-
-  /* Clearly Interactive Jump Bar (distinguished from read-only text!) */
-  .cs-nav-box {
+  .cs-meta {
     display: flex;
     flex-direction: column;
     gap: 7px;
-    padding: 10px 12px;
-    border-radius: 12px;
-    background: var(--cs-surface);
-    font-size: 11.5px;
+    min-width: 0;
   }
-  .cs-nav-row {
+  .cs-meta-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .cs-meta-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 620;
+    letter-spacing: -0.02em;
+    color: var(--cs-ink);
+  }
+  .cs-state-dot {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 550;
+    color: var(--cs-muted);
+  }
+  .cs-state-dot::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .cs-meta-desc {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--cs-muted);
+  }
+
+  /* Clickable Jump Chips */
+  .cs-links {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding-top: 10px;
+    border-top: 1px solid var(--cs-hairline);
+  }
+  .cs-link-row {
     display: flex;
     align-items: center;
     gap: 6px;
     flex-wrap: wrap;
-  }
-  .cs-nav-label {
     font-size: 11px;
-    font-weight: 600;
-    color: var(--cs-muted);
-    min-width: 58px;
   }
-  .cs-jump-pill {
+  .cs-link-lbl {
+    color: var(--cs-faint);
+    min-width: 52px;
+    font-weight: 550;
+  }
+  .cs-chip {
     appearance: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    border: 1px solid var(--cs-border-strong);
-    background: var(--cs-card);
+    border: 1px solid var(--cs-hairline);
+    background: var(--cs-canvas);
     color: var(--cs-ink);
-    font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: 11px;
     padding: 3px 8px;
     border-radius: 7px;
     cursor: pointer;
-    transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
+    transition: border-color 0.14s ease, color 0.14s ease;
   }
-  .cs-jump-pill:hover {
+  .cs-chip:hover {
     border-color: var(--cs-blue);
     color: var(--cs-blue);
-    background: var(--cs-blue-soft);
   }
 
-  /* Modal Footer: Clean Action Controls */
-  .cs-modal-footer {
-    border-top: 1px solid var(--cs-border);
+  /* Modal Footer: Clean Actions */
+  .cs-sheet-foot {
     padding: 12px 16px;
-    background: var(--cs-surface);
+    border-top: 1px solid var(--cs-hairline);
+    background: var(--cs-canvas);
     display: flex;
     flex-direction: column;
     gap: 10px;
   }
-  .cs-action-bar {
+  .cs-actions {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
   }
-  .cs-btn {
+  .cs-btn-primary {
     appearance: none;
+    flex: 1;
     border: none;
     border-radius: 10px;
     padding: 9px 14px;
-    background: var(--cs-accent);
-    color: var(--cs-accent-fg);
+    background: var(--cs-primary);
+    color: var(--cs-primary-fg);
     font-size: 12.5px;
     font-weight: 600;
     cursor: pointer;
-    flex: 1;
-    min-width: 150px;
   }
-  .cs-btn:hover { opacity: 0.9; }
-  .cs-btn-secondary {
+  .cs-btn-primary:hover { opacity: 0.88; }
+  .cs-btn-ghost {
     appearance: none;
-    border: 1px solid var(--cs-border-strong);
+    border: 1px solid var(--cs-hairline-strong);
     border-radius: 10px;
     padding: 9px 14px;
     background: var(--cs-card);
@@ -577,68 +652,223 @@ const BOARD_CSS = `
     font-weight: 550;
     cursor: pointer;
   }
-  .cs-btn-secondary:hover {
-    border-color: var(--cs-blue);
-    color: var(--cs-blue);
-  }
+  .cs-btn-ghost:hover { border-color: var(--cs-ink); }
 
-  /* Decision Radios — ONLY shown when there is a real error/conflict fork! */
+  /* Error-only Fix Choices */
   .cs-choices {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
-  @media (max-width: 520px) {
+  @media (max-width: 440px) {
     .cs-choices { grid-template-columns: 1fr; }
   }
   .cs-choice {
     display: flex;
     align-items: flex-start;
     gap: 8px;
-    padding: 9px 11px;
-    border-radius: 11px;
-    border: 1px solid var(--cs-border);
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--cs-hairline);
     background: var(--cs-card);
     cursor: pointer;
   }
   .cs-choice:has(input:checked) {
-    border-color: var(--cs-blue);
-    background: var(--cs-blue-soft);
+    border-color: var(--cs-ink);
   }
-  .cs-choice input { margin-top: 2px; accent-color: var(--cs-blue); }
+  .cs-choice input { margin-top: 2px; accent-color: var(--cs-ink); }
   .cs-choice-t { font-size: 12px; font-weight: 600; color: var(--cs-ink); }
-  .cs-choice-s { font-size: 11px; color: var(--cs-muted); margin-top: 2px; line-height: 1.4; }
+  .cs-choice-s { font-size: 11px; color: var(--cs-muted); margin-top: 2px; line-height: 1.35; }
+
+  /* Apple Settings Rows */
+  .cs-set-group {
+    border: 1px solid var(--cs-hairline);
+    border-radius: 12px;
+    background: var(--cs-card);
+    overflow: hidden;
+  }
+  .cs-set-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 13px;
+    font-size: 12.5px;
+  }
+  .cs-set-row + .cs-set-row {
+    border-top: 1px solid var(--cs-hairline);
+  }
+  .cs-set-lbl {
+    font-weight: 520;
+    color: var(--cs-ink);
+  }
+  .cs-set-sub {
+    font-size: 11px;
+    color: var(--cs-muted);
+    margin-top: 1px;
+  }
+  .cs-input {
+    width: 100%;
+    border: 1px solid var(--cs-hairline-strong);
+    background: var(--cs-canvas);
+    color: var(--cs-ink);
+    border-radius: 8px;
+    padding: 7px 10px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11.5px;
+    outline: none;
+  }
+  .cs-input:focus { border-color: var(--cs-blue); }
+
+  /* Native Apple Toggle Switch */
+  .cs-switch {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+  .cs-switch input { opacity: 0; width: 0; height: 0; }
+  .cs-slider {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: var(--cs-hairline-strong);
+    cursor: pointer;
+    transition: background 0.16s ease;
+  }
+  .cs-slider::before {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    left: 2px;
+    top: 2px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    transition: transform 0.16s ease;
+  }
+  .cs-switch input:checked + .cs-slider { background: var(--cs-blue); }
+  .cs-switch input:checked + .cs-slider::before { transform: translateX(16px); }
 `;
 
-const LOGO_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="3.5" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2.2" fill="currentColor"/></svg>`;
+const LOGO_SVG = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.2" y="2.2" width="11.6" height="11.6" rx="3.4" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="2.1" fill="currentColor"/></svg>`;
+const GEAR_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
 
-export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): string {
-  const safeJson = JSON.stringify(payload).replace(/</g, '\\u003c');
+export function renderVisualProjectMapHtml(
+  payload: VisualProjectMapPayload,
+  config: CodeSightConfig = DEFAULT_CODESIGHT_CONFIG
+): string {
+  const safeData = JSON.stringify(payload).replace(/</g, '\\u003c');
+  const safeCfg = JSON.stringify({
+    language: config.language,
+    dashedLines: config.dashedLines,
+    autoOpenBrowser: config.autoOpenBrowser,
+    silentRegressionGuard: config.silentRegressionGuard,
+    architectureMode: config.architectureMode,
+    llm: {
+      enabled: config.llm.enabled,
+      baseUrl: config.llm.baseUrl,
+      model: config.llm.model,
+    },
+  }).replace(/</g, '\\u003c');
+
   const diag = payload.activeDiagnosis;
 
   const script = `
-    const DATA = ${safeJson};
+    const DATA = ${safeData};
+    const CFG = ${safeCfg};
     const nodeMap = new Map(DATA.nodes.map(n => [n.id, n]));
     const stageEl = document.getElementById('cs-stage');
     const svgEl = document.getElementById('cs-svg');
-    const colsEl = document.getElementById('cs-columns');
-    const backdropEl = document.getElementById('cs-modal-backdrop');
-    const modalEl = document.getElementById('cs-modal');
+    const colsEl = document.getElementById('cs-cols');
+    const footHintEl = document.getElementById('cs-foot-hint');
+    const legendUpEl = document.getElementById('cs-leg-up');
+    const legendDownEl = document.getElementById('cs-leg-down');
+    const backdropEl = document.getElementById('cs-backdrop');
+    const sheetEl = document.getElementById('cs-sheet');
 
-    const MAX_PER_GROUP = 4;
+    const MAX_PER_GROUP = 5;
     const expandedGroups = new Set();
     let hoveredId = DATA.activeDiagnosis?.targetNodeId || null;
     let activeModalId = null;
+    let settingsOpen = false;
+
+    const T = {
+      zh: {
+        zones: { frontend: '前端', backend: '服务', core: '核心', shared: '基础' },
+        uses: '依赖',
+        usedBy: '影响',
+        none: '无',
+        more: (n) => '+ 其余 ' + n + ' 项',
+        less: '收起',
+        hoverHint: '悬停查看连线，点击查看详情',
+        faultBtn: '查看修复',
+        faultState: '报错位置',
+        callers: (n) => n === 0 ? '独立文件' : n + ' 处调用',
+        editBtn: (hub) => hub ? '安全调整' : '调整此文件',
+        explainBtn: '讲解代码',
+        copyFix: '复制修复指令',
+        copied: '已复制给 AI',
+        settings: '设置',
+        langLbl: '语言',
+        linesLbl: '关联虚线',
+        linesAlways: '常显',
+        linesHover: '仅悬停',
+        guardLbl: '静默回归拦截',
+        guardSub: '拦截空 catch、as any 与删校验',
+        archLbl: '架构分层',
+        archAuto: '自动',
+        archLocal: '本地',
+        archLlm: '模型',
+        llmLbl: '小模型增强（BYOK）',
+        saveBtn: '保存设置',
+        saved: '已保存',
+        savedCopy: '已复制同步指令',
+      },
+      en: {
+        zones: { frontend: 'Frontend', backend: 'Backend', core: 'Core', shared: 'Shared' },
+        uses: 'Uses',
+        usedBy: 'Used by',
+        none: 'None',
+        more: (n) => '+ ' + n + ' more',
+        less: 'Less',
+        hoverHint: 'Hover for links, click to inspect',
+        faultBtn: 'Inspect fix',
+        faultState: 'Error origin',
+        callers: (n) => n === 0 ? 'Standalone' : n + ' callers',
+        editBtn: (hub) => hub ? 'Safe edit' : 'Edit file',
+        explainBtn: 'Explain',
+        copyFix: 'Copy fix prompt',
+        copied: 'Copied for AI',
+        settings: 'Settings',
+        langLbl: 'Language',
+        linesLbl: 'Flow lines',
+        linesAlways: 'Always',
+        linesHover: 'Hover',
+        guardLbl: 'Regression guard',
+        guardSub: 'Catch empty catch, as any, removed guards',
+        archLbl: 'Architecture',
+        archAuto: 'Auto',
+        archLocal: 'Local',
+        archLlm: 'LLM',
+        llmLbl: 'BYOK model',
+        saveBtn: 'Save',
+        saved: 'Saved',
+        savedCopy: 'Sync command copied',
+      }
+    };
+    const tr = () => T[CFG.language === 'en' ? 'en' : 'zh'];
 
     function escHtml(s) {
       return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
-    function displayFileName(nodeOrPath) {
+    function shortName(nodeOrPath) {
       const p = typeof nodeOrPath === 'string' ? nodeOrPath : nodeOrPath.path;
       const parts = p.split('/');
       const base = parts[parts.length - 1] || p;
-      if (base === 'index.ts' || base === 'index.tsx' || base === 'server.ts' || base === 'main.tsx') {
+      if (base === 'index.ts' || base === 'index.tsx' || base === 'server.ts' || base === 'main.tsx' || base === '__init__.py') {
         const pkgIdx = parts.findIndex(seg => seg === 'packages' || seg === 'apps');
         if (pkgIdx >= 0 && parts[pkgIdx + 1]) return parts[pkgIdx + 1] + '/' + base;
         if (parts.length >= 2) return parts[parts.length - 2] + '/' + base;
@@ -646,196 +876,139 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
       return base;
     }
 
+    function zoneHeading(zone) {
+      if (CFG.language === 'en') return tr().zones[zone.kind] || zone.badge || zone.title;
+      return tr().zones[zone.kind] || zone.title;
+    }
+
     function renderPrototypeSvg(node) {
       const k = node.prototypeKind;
-      const label = escHtml(displayFileName(node).replace(/\\.(tsx|jsx|ts|js)$/, ''));
-      const comps = (node.childComponents && node.childComponents.length > 0 ? node.childComponents : node.exports).slice(0, 2);
-
       if (k === 'ui-modal') {
-        return '<svg viewBox="0 0 200 118" width="100%" style="max-width:190px">' +
-          '<rect x="4" y="4" width="192" height="106" rx="10" fill="var(--cs-surface)" stroke="var(--cs-border)"/>' +
-          '<rect x="26" y="16" width="148" height="82" rx="9" fill="var(--cs-card)" stroke="var(--cs-blue)" stroke-width="1.3"/>' +
-          '<rect x="38" y="27" width="64" height="6" rx="3" fill="var(--cs-ink)" opacity="0.5"/>' +
-          '<circle cx="160" cy="30" r="4.5" fill="var(--cs-muted)" opacity="0.25"/>' +
-          '<rect x="38" y="43" width="124" height="5.5" rx="2.7" fill="var(--cs-muted)" opacity="0.24"/>' +
-          '<rect x="38" y="53" width="96" height="5.5" rx="2.7" fill="var(--cs-muted)" opacity="0.18"/>' +
-          '<rect x="38" y="70" width="54" height="16" rx="5" fill="var(--cs-surface)"/>' +
-          '<rect x="100" y="70" width="62" height="16" rx="5" fill="var(--cs-blue)" opacity="0.88"/>' +
-          '<text x="100" y="114" text-anchor="middle" font-size="8.5" fill="var(--cs-muted)">弹窗原型 · ' + label + '</text>' +
+        return '<svg viewBox="0 0 160 96" width="144">' +
+          '<rect x="4" y="4" width="152" height="88" rx="8" fill="var(--cs-bg)" stroke="var(--cs-hairline-strong)"/>' +
+          '<rect x="26" y="16" width="108" height="64" rx="8" fill="var(--cs-card)" stroke="var(--cs-blue)" stroke-width="1.2"/>' +
+          '<rect x="36" y="26" width="46" height="5" rx="2.5" fill="var(--cs-ink)" opacity="0.55"/>' +
+          '<rect x="36" y="38" width="88" height="4" rx="2" fill="var(--cs-muted)" opacity="0.3"/>' +
+          '<rect x="36" y="46" width="66" height="4" rx="2" fill="var(--cs-muted)" opacity="0.22"/>' +
+          '<rect x="82" y="59" width="42" height="12" rx="4" fill="var(--cs-ink)" opacity="0.85"/>' +
         '</svg>';
       }
-
       if (k === 'ui-hud') {
-        return '<svg viewBox="0 0 200 118" width="100%" style="max-width:190px">' +
-          '<rect x="4" y="4" width="192" height="102" rx="10" fill="var(--cs-surface)" stroke="var(--cs-border)"/>' +
-          '<rect x="12" y="14" width="76" height="80" rx="7" fill="var(--cs-card)" opacity="0.65"/>' +
-          '<rect x="98" y="10" width="90" height="90" rx="11" fill="var(--cs-card)" stroke="var(--cs-blue)" stroke-width="1.3"/>' +
-          '<circle cx="110" cy="21" r="3" fill="var(--cs-blue)"/>' +
-          '<rect x="118" y="18.5" width="42" height="5" rx="2.5" fill="var(--cs-ink)" opacity="0.5"/>' +
-          '<rect x="108" y="31" width="70" height="12" rx="5" fill="var(--cs-blue-soft)"/>' +
-          '<rect x="108" y="48" width="70" height="22" rx="5" fill="var(--cs-surface)"/>' +
-          '<rect x="108" y="76" width="70" height="15" rx="5" fill="var(--cs-blue)" opacity="0.85"/>' +
-          '<text x="100" y="115" text-anchor="middle" font-size="8.5" fill="var(--cs-muted)">悬浮面板原型 · ' + label + '</text>' +
+        return '<svg viewBox="0 0 160 96" width="144">' +
+          '<rect x="4" y="4" width="152" height="88" rx="8" fill="var(--cs-bg)" stroke="var(--cs-hairline)"/>' +
+          '<rect x="12" y="14" width="58" height="68" rx="6" fill="var(--cs-canvas)"/>' +
+          '<rect x="78" y="10" width="70" height="76" rx="9" fill="var(--cs-card)" stroke="var(--cs-blue)" stroke-width="1.2"/>' +
+          '<rect x="87" y="20" width="34" height="4.5" rx="2.2" fill="var(--cs-ink)" opacity="0.55"/>' +
+          '<rect x="87" y="31" width="52" height="12" rx="4" fill="var(--cs-blue-soft)"/>' +
+          '<rect x="87" y="48" width="52" height="14" rx="4" fill="var(--cs-canvas)"/>' +
+          '<rect x="87" y="67" width="52" height="11" rx="4" fill="var(--cs-ink)" opacity="0.82"/>' +
         '</svg>';
       }
-
-      if (k === 'ui-card-flow') {
-        return '<svg viewBox="0 0 200 118" width="100%" style="max-width:190px">' +
-          '<rect x="8" y="8" width="184" height="94" rx="11" fill="var(--cs-card)" stroke="var(--cs-blue)" stroke-width="1.2"/>' +
-          '<rect x="20" y="19" width="48" height="11" rx="5.5" fill="var(--cs-blue-soft)"/>' +
-          '<rect x="20" y="40" width="42" height="22" rx="6" fill="var(--cs-surface)" stroke="var(--cs-border)"/>' +
-          '<path d="M64 51 H75" stroke="var(--cs-blue)" stroke-width="1.4" stroke-dasharray="2.5 2"/>' +
-          '<rect x="77" y="40" width="46" height="22" rx="6" fill="var(--cs-red-soft)" stroke="var(--cs-red)"/>' +
-          '<path d="M125 51 H136" stroke="var(--cs-amber)" stroke-width="1.4" stroke-dasharray="2.5 2"/>' +
-          '<rect x="138" y="40" width="42" height="22" rx="6" fill="var(--cs-amber-soft)" stroke="var(--cs-amber)"/>' +
-          '<rect x="20" y="72" width="160" height="16" rx="5" fill="var(--cs-green-soft)"/>' +
-          '<text x="100" y="114" text-anchor="middle" font-size="8.5" fill="var(--cs-muted)">链路卡片原型 · ' + label + '</text>' +
+      if (k === 'ui-card-flow' || k === 'ui-card-diff' || k === 'ui-page' || k === 'ui-card') {
+        return '<svg viewBox="0 0 160 96" width="144">' +
+          '<rect x="8" y="8" width="144" height="80" rx="9" fill="var(--cs-card)" stroke="var(--cs-hairline-strong)"/>' +
+          '<circle cx="19" cy="18" r="2.2" fill="var(--cs-faint)"/>' +
+          '<circle cx="27" cy="18" r="2.2" fill="var(--cs-faint)"/>' +
+          '<line x1="8" y1="27" x2="152" y2="27" stroke="var(--cs-hairline)"/>' +
+          '<rect x="18" y="35" width="70" height="44" rx="5" fill="var(--cs-canvas)"/>' +
+          '<rect x="95" y="35" width="47" height="19" rx="5" fill="var(--cs-blue-soft)" stroke="var(--cs-blue)" stroke-width="0.9"/>' +
+          '<rect x="95" y="60" width="47" height="19" rx="5" fill="var(--cs-canvas)"/>' +
         '</svg>';
       }
-
-      if (k === 'ui-card-diff') {
-        return '<svg viewBox="0 0 200 118" width="100%" style="max-width:190px">' +
-          '<rect x="8" y="8" width="184" height="94" rx="11" fill="var(--cs-card)" stroke="var(--cs-amber)" stroke-width="1.2"/>' +
-          '<rect x="20" y="19" width="54" height="11" rx="5.5" fill="var(--cs-amber-soft)"/>' +
-          '<rect x="20" y="38" width="76" height="26" rx="6" fill="var(--cs-green-soft)"/>' +
-          '<rect x="104" y="38" width="76" height="26" rx="6" fill="var(--cs-red-soft)"/>' +
-          '<text x="58" y="54" text-anchor="middle" font-size="8.5" fill="var(--cs-green)">原本</text>' +
-          '<text x="142" y="54" text-anchor="middle" font-size="8.5" fill="var(--cs-red)">现在</text>' +
-          '<rect x="20" y="72" width="160" height="17" rx="5" fill="var(--cs-surface)"/>' +
-          '<text x="100" y="114" text-anchor="middle" font-size="8.5" fill="var(--cs-muted)">对比卡片原型 · ' + label + '</text>' +
-        '</svg>';
-      }
-
-      if (k === 'ui-page' || k === 'ui-card') {
-        const subText = comps.length > 0 ? comps.join(' · ') : label;
-        return '<svg viewBox="0 0 200 118" width="100%" style="max-width:190px">' +
-          '<rect x="8" y="8" width="184" height="94" rx="11" fill="var(--cs-card)" stroke="var(--cs-blue)" stroke-width="1.2"/>' +
-          '<rect x="8" y="8" width="184" height="18" rx="9" fill="var(--cs-surface)"/>' +
-          '<circle cx="20" cy="17" r="2.6" fill="var(--cs-muted)" opacity="0.45"/>' +
-          '<circle cx="29" cy="17" r="2.6" fill="var(--cs-muted)" opacity="0.45"/>' +
-          '<rect x="18" y="34" width="96" height="56" rx="7" fill="var(--cs-surface)"/>' +
-          '<rect x="122" y="34" width="60" height="25" rx="6" fill="var(--cs-blue-soft)"/>' +
-          '<rect x="122" y="65" width="60" height="25" rx="6" fill="var(--cs-surface)"/>' +
-          '<text x="100" y="114" text-anchor="middle" font-size="8.5" fill="var(--cs-muted)">页面原型 · ' + escHtml(subText) + '</text>' +
-        '</svg>';
-      }
-
       if (k === 'api-server') {
-        return '<svg viewBox="0 0 200 118" width="100%" style="max-width:190px">' +
-          '<rect x="8" y="36" width="44" height="36" rx="8" fill="var(--cs-blue-soft)" stroke="var(--cs-blue)"/>' +
-          '<text x="30" y="57" text-anchor="middle" font-size="8.5" fill="var(--cs-blue)">调用端</text>' +
-          '<path d="M54 54 H72" stroke="var(--cs-violet)" stroke-width="1.5" stroke-dasharray="3 2.5"/>' +
-          '<rect x="74" y="24" width="54" height="60" rx="9" fill="var(--cs-violet-soft)" stroke="var(--cs-violet)" stroke-width="1.3"/>' +
-          '<text x="101" y="51" text-anchor="middle" font-size="8.5" font-weight="600" fill="var(--cs-violet)">服务路由</text>' +
-          '<text x="101" y="65" text-anchor="middle" font-size="7.5" fill="var(--cs-muted)">HTTP/MCP</text>' +
-          '<path d="M130 54 H146" stroke="var(--cs-muted)" stroke-width="1.4" stroke-dasharray="3 2.5"/>' +
-          '<rect x="148" y="36" width="44" height="36" rx="8" fill="var(--cs-card)" stroke="var(--cs-border-strong)"/>' +
-          '<text x="170" y="57" text-anchor="middle" font-size="8.5" fill="var(--cs-ink)">核心逻辑</text>' +
-          '<text x="100" y="112" text-anchor="middle" font-size="8.5" fill="var(--cs-muted)">服务端通信示意</text>' +
+        return '<svg viewBox="0 0 160 96" width="144">' +
+          '<rect x="8" y="32" width="34" height="32" rx="7" fill="var(--cs-card)" stroke="var(--cs-hairline-strong)"/>' +
+          '<path d="M44 48 H60" stroke="var(--cs-blue)" stroke-width="1.3" stroke-dasharray="3 2.5"/>' +
+          '<rect x="62" y="22" width="38" height="52" rx="8" fill="var(--cs-card)" stroke="var(--cs-blue)" stroke-width="1.2"/>' +
+          '<line x1="70" y1="38" x2="92" y2="38" stroke="var(--cs-ink)" stroke-width="1.5" opacity="0.5"/>' +
+          '<line x1="70" y1="48" x2="88" y2="48" stroke="var(--cs-muted)" stroke-width="1.3" opacity="0.45"/>' +
+          '<line x1="70" y1="58" x2="92" y2="58" stroke="var(--cs-muted)" stroke-width="1.3" opacity="0.35"/>' +
+          '<path d="M102 48 H118" stroke="var(--cs-muted)" stroke-width="1.3" stroke-dasharray="3 2.5"/>' +
+          '<rect x="120" y="32" width="32" height="32" rx="7" fill="var(--cs-card)" stroke="var(--cs-hairline-strong)"/>' +
         '</svg>';
       }
-
-      if (k === 'data-schema') {
-        const fields = (node.exports.length > 0 ? node.exports : ['Schema', 'Model']).slice(0, 3);
-        return '<svg viewBox="0 0 200 118" width="100%" style="max-width:190px">' +
-          '<rect x="20" y="10" width="160" height="88" rx="10" fill="var(--cs-card)" stroke="var(--cs-amber)" stroke-width="1.2"/>' +
-          '<rect x="20" y="10" width="160" height="22" rx="9" fill="var(--cs-amber-soft)"/>' +
-          '<text x="100" y="25" text-anchor="middle" font-size="9" font-weight="600" fill="var(--cs-amber)">' + label + '</text>' +
-          fields.map((f, i) => '<text x="34" y="' + (48 + i * 16) + '" font-size="8.5" font-family="monospace" fill="var(--cs-ink)">• ' + escHtml(f) + '</text>').join('') +
-          '<text x="100" y="112" text-anchor="middle" font-size="8.5" fill="var(--cs-muted)">被 ' + node.downstreamReach + ' 个文件共用</text>' +
-        '</svg>';
-      }
-
-      const fnName = escHtml((node.exports[0] || label).slice(0, 16));
-      return '<svg viewBox="0 0 200 118" width="100%" style="max-width:190px">' +
-        '<rect x="6" y="40" width="38" height="30" rx="7" fill="var(--cs-blue-soft)"/>' +
-        '<text x="25" y="58" text-anchor="middle" font-size="8" fill="var(--cs-blue)">输入</text>' +
-        '<path d="M46 55 H60" stroke="var(--cs-muted)" stroke-width="1.4" stroke-dasharray="3 2"/>' +
-        '<rect x="62" y="30" width="76" height="50" rx="10" fill="var(--cs-card)" stroke="var(--cs-blue)" stroke-width="1.2"/>' +
-        '<text x="100" y="52" text-anchor="middle" font-size="8.5" font-weight="600" fill="var(--cs-ink)">' + fnName + '</text>' +
-        '<text x="100" y="66" text-anchor="middle" font-size="7.5" fill="var(--cs-muted)">' + escHtml(node.roleLabel) + '</text>' +
-        '<path d="M140 55 H154" stroke="var(--cs-muted)" stroke-width="1.4" stroke-dasharray="3 2"/>' +
-        '<rect x="156" y="40" width="38" height="30" rx="7" fill="var(--cs-green-soft)"/>' +
-        '<text x="175" y="58" text-anchor="middle" font-size="8" fill="var(--cs-green)">输出</text>' +
-        '<text x="100" y="112" text-anchor="middle" font-size="8.5" fill="var(--cs-muted)">处理流程示意</text>' +
+      return '<svg viewBox="0 0 160 96" width="144">' +
+        '<rect x="18" y="16" width="124" height="64" rx="9" fill="var(--cs-card)" stroke="var(--cs-hairline-strong)"/>' +
+        '<rect x="30" y="29" width="52" height="5" rx="2.5" fill="var(--cs-ink)" opacity="0.55"/>' +
+        '<rect x="30" y="42" width="100" height="4" rx="2" fill="var(--cs-muted)" opacity="0.28"/>' +
+        '<rect x="30" y="52" width="84" height="4" rx="2" fill="var(--cs-muted)" opacity="0.22"/>' +
+        '<rect x="30" y="62" width="64" height="4" rx="2" fill="var(--cs-blue)" opacity="0.55"/>' +
       '</svg>';
     }
 
-    /**
-     * Draw crisp directional dashed curves ONLY for the hovered/active node's direct 1-hop connections!
-     * Connects cleanly from card side edges across columns (or gentle side arc within the same column).
-     */
-    function drawDirectionalDashedLines() {
+    function drawDashedLines() {
       const focusId = hoveredId || activeModalId;
       const stageRect = stageEl.getBoundingClientRect();
       if (!stageRect.width || !stageRect.height) return;
       svgEl.setAttribute('viewBox', '0 0 ' + stageRect.width + ' ' + stageRect.height);
 
       const elMap = new Map();
-      colsEl.querySelectorAll('.cs-mod').forEach(el => elMap.set(el.dataset.nodeId, el));
+      colsEl.querySelectorAll('.cs-row').forEach(el => elMap.set(el.dataset.nodeId, el));
 
       const defs =
         '<defs>' +
-          '<marker id="cs-arr-muted" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M1 1.5 L6.5 4 L1 6.5" fill="none" stroke="var(--cs-muted)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/></marker>' +
-          '<marker id="cs-arr-blue" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M1 1.5 L6.5 4 L1 6.5" fill="none" stroke="var(--cs-blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>' +
-          '<marker id="cs-arr-amber" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M1 1.5 L6.5 4 L1 6.5" fill="none" stroke="var(--cs-amber)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>' +
-          '<marker id="cs-arr-red" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M1 1.5 L6.5 4 L1 6.5" fill="none" stroke="var(--cs-red)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>' +
+          '<marker id="cs-m-idle" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse"><path d="M1.2 1.8 L6.2 4 L1.2 6.2" fill="none" stroke="var(--cs-faint)" stroke-width="1.3" stroke-linecap="round"/></marker>' +
+          '<marker id="cs-m-blue" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M1.2 1.6 L6.4 4 L1.2 6.4" fill="none" stroke="var(--cs-blue)" stroke-width="1.5" stroke-linecap="round"/></marker>' +
+          '<marker id="cs-m-amber" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M1.2 1.6 L6.4 4 L1.2 6.4" fill="none" stroke="var(--cs-amber)" stroke-width="1.5" stroke-linecap="round"/></marker>' +
+          '<marker id="cs-m-red" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M1.2 1.6 L6.4 4 L1.2 6.4" fill="none" stroke="var(--cs-red)" stroke-width="1.5" stroke-linecap="round"/></marker>' +
         '</defs>';
 
       const parts = [];
 
-      function addDashedCurve(r1, r2, cls, colorVar, markerId, idx, ambient) {
+      function pushCurve(r1, r2, cls, colorVar, markerId, idx, idle) {
         const sameCol = Math.abs(r1.left - r2.left) < 24;
         const y1 = r1.top + r1.height / 2 - stageRect.top;
         const y2 = r2.top + r2.height / 2 - stageRect.top;
-
         let x1, x2, d;
         if (sameCol) {
           const rightEdge = Math.max(r1.right, r2.right) - stageRect.left;
-          const goLeft = rightEdge + 18 > stageRect.width;
+          const goLeft = rightEdge + 16 > stageRect.width;
           x1 = (goLeft ? r1.left : r1.right) - stageRect.left;
           x2 = (goLeft ? r2.left : r2.right) - stageRect.left;
-          const offset = 10 + (idx % 3) * 4;
-          const bulge = goLeft ? Math.min(x1, x2) - offset : Math.max(x1, x2) + offset;
+          const off = 9 + (idx % 3) * 4;
+          const bulge = goLeft ? Math.min(x1, x2) - off : Math.max(x1, x2) + off;
           d = 'M ' + x1 + ' ' + y1 + ' C ' + bulge + ' ' + y1 + ', ' + bulge + ' ' + y2 + ', ' + x2 + ' ' + y2;
         } else {
-          const goingRight = r1.left < r2.left;
-          x1 = (goingRight ? r1.right : r1.left) - stageRect.left;
-          x2 = (goingRight ? r2.left : r2.right) - stageRect.left;
-          const dx = Math.max(22, Math.abs(x2 - x1) * 0.42);
-          const c1x = goingRight ? x1 + dx : x1 - dx;
-          const c2x = goingRight ? x2 - dx : x2 + dx;
+          const right = r1.left < r2.left;
+          x1 = (right ? r1.right : r1.left) - stageRect.left;
+          x2 = (right ? r2.left : r2.right) - stageRect.left;
+          const dx = Math.max(20, Math.abs(x2 - x1) * 0.42);
+          const c1x = right ? x1 + dx : x1 - dx;
+          const c2x = right ? x2 - dx : x2 + dx;
           d = 'M ' + x1 + ' ' + y1 + ' C ' + c1x + ' ' + y1 + ', ' + c2x + ' ' + y2 + ', ' + x2 + ' ' + y2;
         }
-        if (ambient) {
-          parts.push('<path d="' + d + '" fill="none" stroke="var(--cs-muted)" stroke-width="1.2" stroke-dasharray="4 4" opacity="0.38" marker-end="url(#cs-arr-muted)" />');
+        if (idle) {
+          parts.push('<path class="cs-edge-idle" d="' + d + '" marker-end="url(#cs-m-idle)" />');
         } else {
-          parts.push('<circle cx="' + x1 + '" cy="' + y1 + '" r="2.6" fill="' + colorVar + '" />');
+          parts.push('<circle cx="' + x1 + '" cy="' + y1 + '" r="2.2" fill="' + colorVar + '" />');
           parts.push('<path class="' + cls + '" d="' + d + '" marker-end="url(#' + markerId + ')" />');
         }
       }
 
-      // Idle state: show up to 6 clean cross-column dashed backbone connections so relationships are immediately visible
       if (!focusId) {
-        let drawn = 0;
-        const usedPairs = new Set();
+        if (CFG.dashedLines === 'hover') {
+          svgEl.innerHTML = '';
+          return;
+        }
+        let count = 0;
+        const seen = new Set();
         for (const [id, srcEl] of elMap.entries()) {
-          if (drawn >= 6) break;
+          if (count >= 5) break;
           const n = nodeMap.get(id);
           if (!n) continue;
           const r1 = srcEl.getBoundingClientRect();
           for (const upId of n.upstreamPaths) {
-            if (drawn >= 6) break;
-            const targetEl = elMap.get(upId);
-            if (!targetEl) continue;
-            const r2 = targetEl.getBoundingClientRect();
-            if (Math.abs(r1.left - r2.left) < 24) continue; // cross-column only in idle view
-            const key = id + '->' + upId;
-            if (usedPairs.has(key)) continue;
-            usedPairs.add(key);
-            addDashedCurve(r1, r2, '', 'var(--cs-muted)', 'cs-arr-muted', drawn, true);
-            drawn++;
-            break; // max 1 ambient line per card so it stays uncluttered
+            if (count >= 5) break;
+            const tEl = elMap.get(upId);
+            if (!tEl) continue;
+            const r2 = tEl.getBoundingClientRect();
+            if (Math.abs(r1.left - r2.left) < 24) continue;
+            const k = id + '>' + upId;
+            if (seen.has(k)) continue;
+            seen.add(k);
+            pushCurve(r1, r2, 'cs-edge-idle', 'var(--cs-faint)', 'cs-m-idle', count, true);
+            count++;
+            break;
           }
         }
         svgEl.innerHTML = defs + parts.join('');
@@ -848,27 +1021,24 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
         svgEl.innerHTML = '';
         return;
       }
-
       const srcRect = srcEl.getBoundingClientRect();
 
-      // Direct upstream dependencies (blue dashed: focus -> dependency)
-      focusNode.upstreamPaths.slice(0, 5).forEach((upId, idx) => {
-        const targetEl = elMap.get(upId);
-        if (targetEl) addDashedCurve(srcRect, targetEl.getBoundingClientRect(), 'cs-edge-up', 'var(--cs-blue)', 'cs-arr-blue', idx, false);
+      focusNode.upstreamPaths.slice(0, 5).forEach((upId, i) => {
+        const el = elMap.get(upId);
+        if (el) pushCurve(srcRect, el.getBoundingClientRect(), 'cs-edge-up', 'var(--cs-blue)', 'cs-m-blue', i, false);
       });
 
-      // Direct downstream dependents (amber/red dashed: focus -> impacted consumer)
       const isFault = DATA.activeDiagnosis?.targetNodeId === focusId;
-      focusNode.directDownstreamPaths.slice(0, 5).forEach((downId, idx) => {
-        const targetEl = elMap.get(downId);
-        if (targetEl) {
-          addDashedCurve(
+      focusNode.directDownstreamPaths.slice(0, 5).forEach((downId, i) => {
+        const el = elMap.get(downId);
+        if (el) {
+          pushCurve(
             srcRect,
-            targetEl.getBoundingClientRect(),
+            el.getBoundingClientRect(),
             isFault ? 'cs-edge-fault' : 'cs-edge-down',
             isFault ? 'var(--cs-red)' : 'var(--cs-amber)',
-            isFault ? 'cs-arr-red' : 'cs-arr-amber',
-            idx,
+            isFault ? 'cs-m-red' : 'cs-m-amber',
+            i,
             false
           );
         }
@@ -877,93 +1047,104 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
       svgEl.innerHTML = defs + parts.join('');
     }
 
-    function renderColumns() {
+    function syncChromeText() {
+      const t = tr();
+      document.querySelectorAll('[data-lang-btn]').forEach(b => {
+        b.classList.toggle('is-on', b.dataset.langBtn === CFG.language);
+      });
+      if (legendUpEl) legendUpEl.innerHTML = '<span class="cs-dash"></span>' + t.uses;
+      if (legendDownEl) legendDownEl.innerHTML = '<span class="cs-dash"></span>' + t.usedBy;
+      const fb = document.getElementById('cs-open-fault');
+      if (fb) fb.textContent = t.faultBtn;
+    }
+
+    function renderBoard() {
+      syncChromeText();
+      const t = tr();
       const zones = DATA.zones && DATA.zones.length > 0
         ? DATA.zones
-        : [{ id: 'default', title: '项目模块', badge: 'Modules', kind: 'core', lanes: DATA.lanes }];
+        : [{ id: 'core', title: 'Core', badge: 'Core', kind: 'core', lanes: DATA.lanes }];
       colsEl.style.setProperty('--zone-count', String(zones.length));
 
       colsEl.innerHTML = zones.map(zone => {
+        const totalInZone = zone.lanes.reduce((sum, l) => sum + l.nodeIds.length, 0);
         const groupsHtml = zone.lanes.map(lane => {
           const isExp = expandedGroups.has(lane.id);
-          const visibleIds = isExp ? lane.nodeIds : lane.nodeIds.slice(0, MAX_PER_GROUP);
-          const hidden = lane.nodeIds.length - visibleIds.length;
+          const visible = isExp ? lane.nodeIds : lane.nodeIds.slice(0, MAX_PER_GROUP);
+          const hidden = lane.nodeIds.length - visible.length;
 
-          const itemsHtml = visibleIds.map(id => {
+          const rows = visible.map(id => {
             const n = nodeMap.get(id);
             if (!n) return '';
             const isFault = DATA.activeDiagnosis?.targetNodeId === id;
-            let tagHtml = '';
-            if (isFault) tagHtml = '<span class="cs-mod-tag cs-tag-fault">报错</span>';
-            else if (n.downstreamReach >= 5) tagHtml = '<span class="cs-mod-tag cs-tag-hub">' + n.downstreamReach + '处用</span>';
-            else if (zone.kind === 'frontend') tagHtml = '<span class="cs-mod-tag cs-tag-ui">原型</span>';
+            const rightEl = isFault
+              ? '<span class="cs-dot-fault" aria-label="error"></span>'
+              : n.downstreamReach >= 5
+              ? '<span class="cs-row-metric">' + n.downstreamReach + '</span>'
+              : '';
 
-            return '<button type="button" class="cs-mod' + (isFault ? ' is-fault' : '') + '" data-node-id="' + escHtml(n.id) + '" title="' + escHtml(n.path) + '">' +
-              '<div class="cs-mod-left">' +
-                '<span class="cs-mod-name">' + escHtml(displayFileName(n)) + '</span>' +
-                '<span class="cs-mod-role">' + escHtml(n.roleLabel) + '</span>' +
-              '</div>' +
-              tagHtml +
+            return '<button type="button" class="cs-row' + (isFault ? ' is-fault' : '') + '" data-node-id="' + escHtml(n.id) + '" title="' + escHtml(n.path) + '">' +
+              '<span class="cs-row-name">' + escHtml(shortName(n)) + '</span>' +
+              rightEl +
             '</button>';
           }).join('');
 
-          const moreBtn = hidden > 0
-            ? '<button type="button" class="cs-more-btn" data-expand-group="' + escHtml(lane.id) + '">展开其余 ' + hidden + ' 个文件</button>'
+          const more = hidden > 0
+            ? '<button type="button" class="cs-more" data-expand="' + escHtml(lane.id) + '">' + t.more(hidden) + '</button>'
             : (isExp && lane.nodeIds.length > MAX_PER_GROUP
-                ? '<button type="button" class="cs-more-btn" data-expand-group="' + escHtml(lane.id) + '">收起</button>'
+                ? '<button type="button" class="cs-more" data-expand="' + escHtml(lane.id) + '">' + t.less + '</button>'
                 : '');
 
           return '<div class="cs-group">' +
-            '<div class="cs-group-title">' + escHtml(lane.title) + '</div>' +
-            '<div class="cs-file-list">' + itemsHtml + moreBtn + '</div>' +
+            '<div class="cs-group-label">' + escHtml(lane.title) + '</div>' +
+            '<div class="cs-list">' + rows + more + '</div>' +
           '</div>';
         }).join('');
 
-        return '<div class="cs-col kind-' + escHtml(zone.kind) + '">' +
+        return '<div class="cs-col">' +
           '<div class="cs-col-head">' +
-            '<span class="cs-col-title">' + escHtml(zone.title) + '</span>' +
-            '<span class="cs-col-badge">' + escHtml(zone.badge) + '</span>' +
+            '<span class="cs-col-title">' + escHtml(zoneHeading(zone)) + '</span>' +
+            '<span class="cs-col-count">' + totalInZone + '</span>' +
           '</div>' +
           groupsHtml +
         '</div>';
       }).join('');
 
-      colsEl.querySelectorAll('.cs-mod').forEach(btn => {
+      colsEl.querySelectorAll('.cs-row').forEach(btn => {
         const id = btn.dataset.nodeId;
         btn.addEventListener('mouseenter', () => {
           hoveredId = id;
-          updateHoverState();
+          updateHover();
         });
         btn.addEventListener('mouseleave', () => {
           hoveredId = activeModalId || DATA.activeDiagnosis?.targetNodeId || null;
-          updateHoverState();
+          updateHover();
         });
-        btn.addEventListener('click', () => openModal(id));
+        btn.addEventListener('click', () => openFileSheet(id));
       });
 
-      colsEl.querySelectorAll('.cs-more-btn').forEach(btn => {
+      colsEl.querySelectorAll('.cs-more').forEach(btn => {
         btn.addEventListener('click', () => {
-          const gid = btn.dataset.expandGroup;
+          const gid = btn.dataset.expand;
           if (expandedGroups.has(gid)) expandedGroups.delete(gid);
           else expandedGroups.add(gid);
-          renderColumns();
-          requestAnimationFrame(updateHoverState);
+          renderBoard();
         });
       });
 
-      requestAnimationFrame(updateHoverState);
+      requestAnimationFrame(updateHover);
     }
 
-    function updateHoverState() {
+    function updateHover() {
       const focusId = hoveredId || activeModalId;
       const focusNode = focusId ? nodeMap.get(focusId) : null;
       const upSet = new Set(focusNode ? focusNode.upstreamPaths : []);
       const downSet = new Set(focusNode ? focusNode.directDownstreamPaths : []);
 
-      colsEl.querySelectorAll('.cs-mod').forEach(btn => {
+      colsEl.querySelectorAll('.cs-row').forEach(btn => {
         const id = btn.dataset.nodeId;
         const isFault = DATA.activeDiagnosis?.targetNodeId === id;
-        btn.classList.remove('is-focus', 'is-dim', 'is-up', 'is-down');
+        btn.classList.remove('is-focus', 'is-up', 'is-down', 'is-dim');
         if (!focusId) return;
         if (id === focusId) {
           if (!isFault) btn.classList.add('is-focus');
@@ -975,206 +1156,379 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
           btn.classList.add('is-dim');
         }
       });
-      drawDirectionalDashedLines();
+
+      if (footHintEl) {
+        if (focusNode) {
+          footHintEl.textContent = shortName(focusNode) + ' — ' + (focusNode.roleLabel || focusNode.path);
+        } else {
+          footHintEl.textContent = tr().hoverHint;
+        }
+      }
+      drawDashedLines();
     }
 
-    function openModal(id) {
+    function openFileSheet(id) {
       const node = nodeMap.get(id);
       if (!node) return;
+      settingsOpen = false;
       activeModalId = id;
       hoveredId = id;
-      updateHoverState();
+      updateHover();
 
+      const t = tr();
       const isFault = Boolean(DATA.activeDiagnosis && DATA.activeDiagnosis.targetNodeId === id);
-      const impactCount = node.allDownstreamPaths.length;
-      const safeCount = Math.max(0, DATA.totalFiles - 1 - impactCount);
-      const title = isFault ? DATA.activeDiagnosis.headline : displayFileName(node) + ' · ' + node.roleLabel;
-      const desc = isFault ? (DATA.activeDiagnosis.subtext || node.summary) : node.summary;
+      const callers = node.allDownstreamPaths.length;
+      const stateColor = isFault ? 'var(--cs-red)' : callers >= 5 ? 'var(--cs-amber)' : 'var(--cs-green)';
+      const stateLabel = isFault ? t.faultState : t.callers(callers);
 
-      const statusStyle = isFault
-        ? 'color:var(--cs-red);background:var(--cs-red-soft)'
-        : impactCount >= 5
-        ? 'color:var(--cs-amber);background:var(--cs-amber-soft)'
-        : 'color:var(--cs-green);background:var(--cs-green-soft)';
-
-      const statusText = isFault
-        ? '当前报错位置 · 关联 ' + impactCount + ' 个文件'
-        : impactCount >= 5
-        ? '基础共享文件 · 被 ' + impactCount + ' 处用到（改动需谨慎）'
-        : impactCount > 0
-        ? '改动安全可控 · 直接关联 ' + node.directDownstreamPaths.length + ' 个文件'
-        : '独立文件 · 放心调整';
-
-      const protoTag = node.zoneKind === 'frontend' ? '界面原型示意' : node.zoneKind === 'backend' ? '服务流转示意' : '结构示意';
-
-      const upPills = node.upstreamPaths.slice(0, 4).map(p => {
+      const upChips = node.upstreamPaths.slice(0, 4).map(p => {
         const target = nodeMap.get(p);
-        return '<button type="button" class="cs-jump-pill" data-jump="' + escHtml(p) + '">' + escHtml(displayFileName(target || p)) + ' ↗</button>';
-      }).join('') || '<span style="color:var(--cs-muted)">无（最底层文件）</span>';
+        return '<button type="button" class="cs-chip" data-jump="' + escHtml(p) + '">' + escHtml(shortName(target || p)) + ' ↗</button>';
+      }).join('') || '<span style="color:var(--cs-faint)">' + t.none + '</span>';
 
-      const downPills = node.directDownstreamPaths.slice(0, 4).map(p => {
+      const downChips = node.directDownstreamPaths.slice(0, 4).map(p => {
         const target = nodeMap.get(p);
-        return '<button type="button" class="cs-jump-pill" data-jump="' + escHtml(p) + '">' + escHtml(displayFileName(target || p)) + ' ↗</button>';
-      }).join('') || '<span style="color:var(--cs-muted)">无（顶层入口）</span>';
+        return '<button type="button" class="cs-chip" data-jump="' + escHtml(p) + '">' + escHtml(shortName(target || p)) + ' ↗</button>';
+      }).join('') || '<span style="color:var(--cs-faint)">' + t.none + '</span>';
 
-      // Build clean footer: Decision Radios ONLY for actual errors/conflicts; Direct Action Buttons for normal browsing!
-      let footerHtml = '';
+      let footHtml = '';
       if (isFault && DATA.activeDiagnosis.directions.length > 0) {
         const dirs = DATA.activeDiagnosis.directions;
-        footerHtml =
-          '<div style="font-size:11.5px;font-weight:600;color:var(--cs-muted)">选择修复方向</div>' +
+        footHtml =
           '<div class="cs-choices">' +
             dirs.map((d, i) =>
               '<label class="cs-choice">' +
-                '<input type="radio" name="cs_modal_dir" value="' + escHtml(d.id) + '" ' + (i === 0 ? 'checked' : '') + ' />' +
+                '<input type="radio" name="cs_dir" value="' + escHtml(d.id) + '" ' + (i === 0 ? 'checked' : '') + ' />' +
                 '<div><div class="cs-choice-t">' + escHtml(d.label) + '</div><div class="cs-choice-s">' + escHtml(d.strategy) + '</div></div>' +
               '</label>'
             ).join('') +
           '</div>' +
-          '<button type="button" class="cs-btn" id="cs-copy-fix">复制选中修复指令给 AI</button>';
+          '<button type="button" class="cs-btn-primary" id="cs-act-fix">' + t.copyFix + '</button>';
       } else {
-        footerHtml =
-          '<div class="cs-action-bar">' +
-            '<button type="button" class="cs-btn" id="cs-btn-edit">' + (impactCount >= 5 ? '安全调整此文件（不破坏调用方）' : '让 AI 调整此文件') + '</button>' +
-            '<button type="button" class="cs-btn-secondary" id="cs-btn-explain">让 AI 讲讲这段代码</button>' +
+        footHtml =
+          '<div class="cs-actions">' +
+            '<button type="button" class="cs-btn-primary" id="cs-act-edit">' + t.editBtn(callers >= 5) + '</button>' +
+            '<button type="button" class="cs-btn-ghost" id="cs-act-explain">' + t.explainBtn + '</button>' +
           '</div>';
       }
 
-      modalEl.innerHTML =
-        '<div class="cs-modal-head">' +
-          '<div class="cs-breadcrumb">' +
+      sheetEl.innerHTML =
+        '<div class="cs-sheet-head">' +
+          '<div class="cs-crumb">' +
             '<span>' + escHtml(node.zoneTitle) + '</span><span>›</span>' +
-            '<span>' + escHtml(node.laneTitle) + '</span><span>›</span>' +
-            '<strong>' + escHtml(displayFileName(node)) + '</strong>' +
+            '<strong>' + escHtml(shortName(node)) + '</strong>' +
           '</div>' +
-          '<button type="button" class="cs-close-btn" id="cs-modal-close" aria-label="关闭">✕</button>' +
+          '<button type="button" class="cs-close" id="cs-close-btn" aria-label="Close">✕</button>' +
         '</div>' +
-        '<div class="cs-modal-body">' +
-          '<div class="cs-info-grid">' +
-            '<div class="cs-proto-stage">' +
-              '<div class="cs-proto-kicker"><span>' + protoTag + '</span><span>只读预览</span></div>' +
-              '<div class="cs-wireframe">' + renderPrototypeSvg(node) + '</div>' +
-            '</div>' +
-            '<div class="cs-info-col">' +
-              '<span class="cs-status-pill" style="' + statusStyle + '">' + escHtml(statusText) + '</span>' +
-              '<h3 class="cs-modal-title">' + escHtml(title) + '</h3>' +
-              '<p class="cs-modal-desc">' + escHtml(desc) + '</p>' +
-              '<div class="cs-safe-note">其余 ' + safeCount + ' 个文件完全不受影响</div>' +
+        '<div class="cs-sheet-body">' +
+          '<div class="cs-detail-grid">' +
+            '<div class="cs-proto">' + renderPrototypeSvg(node) + '</div>' +
+            '<div class="cs-meta">' +
+              '<div class="cs-meta-top">' +
+                '<h3 class="cs-meta-title">' + escHtml(shortName(node)) + '</h3>' +
+                '<span class="cs-state-dot" style="color:' + stateColor + '">' + escHtml(stateLabel) + '</span>' +
+              '</div>' +
+              '<p class="cs-meta-desc">' + escHtml(isFault ? (DATA.activeDiagnosis.headline || node.summary) : node.summary) + '</p>' +
             '</div>' +
           '</div>' +
-          '<div class="cs-nav-box">' +
-            '<div class="cs-nav-row"><span class="cs-nav-label">依赖谁 ↗</span>' + upPills + '</div>' +
-            '<div class="cs-nav-row"><span class="cs-nav-label">影响谁 ↗</span>' + downPills + '</div>' +
+          '<div class="cs-links">' +
+            '<div class="cs-link-row"><span class="cs-link-lbl">' + t.uses + '</span>' + upChips + '</div>' +
+            '<div class="cs-link-row"><span class="cs-link-lbl">' + t.usedBy + '</span>' + downChips + '</div>' +
           '</div>' +
         '</div>' +
-        '<div class="cs-modal-footer">' + footerHtml + '</div>';
+        '<div class="cs-sheet-foot">' + footHtml + '</div>';
 
       backdropEl.classList.add('is-open');
 
-      document.getElementById('cs-modal-close')?.addEventListener('click', closeModal);
-      modalEl.querySelectorAll('.cs-jump-pill').forEach(btn => {
-        btn.addEventListener('click', () => openModal(btn.dataset.jump));
+      document.getElementById('cs-close-btn')?.addEventListener('click', closeSheet);
+      sheetEl.querySelectorAll('.cs-chip').forEach(btn => {
+        btn.addEventListener('click', () => openFileSheet(btn.dataset.jump));
       });
 
-      const wireCopy = (el, promptText, doneLabel) => {
-        if (!el) return;
-        el.addEventListener('click', async () => {
+      const wireCopy = (btn, promptText) => {
+        if (!btn) return;
+        btn.addEventListener('click', async () => {
           try { await navigator.clipboard.writeText(promptText); } catch {}
           window.parent?.postMessage({ type: 'codesight:actionPrompt', nodeId: node.id, prompt: promptText }, '*');
-          const old = el.textContent;
-          el.textContent = doneLabel;
-          setTimeout(() => { el.textContent = old; }, 1600);
+          const old = btn.textContent;
+          btn.textContent = t.copied;
+          setTimeout(() => { btn.textContent = old; }, 1400);
         });
       };
 
       if (isFault && DATA.activeDiagnosis.directions.length > 0) {
-        const fixBtn = document.getElementById('cs-copy-fix');
+        const fixBtn = document.getElementById('cs-act-fix');
         fixBtn?.addEventListener('click', async () => {
-          const checked = modalEl.querySelector('input[name="cs_modal_dir"]:checked');
+          const checked = sheetEl.querySelector('input[name="cs_dir"]:checked');
           const chosen = DATA.activeDiagnosis.directions.find(d => d.id === checked?.value) || DATA.activeDiagnosis.directions[0];
           try { await navigator.clipboard.writeText(chosen.surgicalPrompt); } catch {}
+          window.parent?.postMessage({ type: 'codesight:actionPrompt', nodeId: node.id, prompt: chosen.surgicalPrompt }, '*');
           const old = fixBtn.textContent;
-          fixBtn.textContent = '已复制，直接发给 AI 即可';
-          setTimeout(() => { fixBtn.textContent = old; }, 1600);
+          fixBtn.textContent = t.copied;
+          setTimeout(() => { fixBtn.textContent = old; }, 1400);
         });
       } else {
-        const editPrompt = impactCount >= 5
-          ? '[CodeSight Safe Edit]\\nModify \`' + node.path + '\` while keeping its exported interface backward-compatible so none of its ' + impactCount + ' dependent files break.'
-          : '[CodeSight Scoped Edit]\\nUpdate \`' + node.path + '\` cleanly. Keep changes minimal and verify ' + (node.directDownstreamPaths.join(', ') || 'build & tests') + '.';
-        const explainPrompt = '[CodeSight Explain]\\nExplain how \`' + node.path + '\` works in plain Chinese, including how it uses (' + (node.upstreamPaths.join(', ') || 'none') + ') and serves (' + (node.directDownstreamPaths.join(', ') || 'top-level entry') + ').';
-
-        wireCopy(document.getElementById('cs-btn-edit'), editPrompt, '已复制调整指令给 AI');
-        wireCopy(document.getElementById('cs-btn-explain'), explainPrompt, '已复制讲解指令给 AI');
+        const editPrompt = callers >= 5
+          ? '[CodeSight Safe Edit] Modify \`' + node.path + '\` while keeping exported signatures backward-compatible (' + callers + ' callers).'
+          : '[CodeSight Edit] Update \`' + node.path + '\` cleanly. Verify ' + (node.directDownstreamPaths.join(', ') || 'build & tests') + '.';
+        const explainPrompt = '[CodeSight Explain] Concisely explain \`' + node.path + '\` with its direct dependencies (' + (node.upstreamPaths.join(', ') || 'none') + ').';
+        wireCopy(document.getElementById('cs-act-edit'), editPrompt);
+        wireCopy(document.getElementById('cs-act-explain'), explainPrompt);
       }
     }
 
-    function closeModal() {
+    function openSettingsSheet() {
+      settingsOpen = true;
       activeModalId = null;
+      const t = tr();
+
+      sheetEl.innerHTML =
+        '<div class="cs-sheet-head">' +
+          '<div class="cs-crumb"><strong>' + t.settings + '</strong></div>' +
+          '<button type="button" class="cs-close" id="cs-close-btn" aria-label="Close">✕</button>' +
+        '</div>' +
+        '<div class="cs-sheet-body">' +
+          '<div class="cs-set-group">' +
+            '<div class="cs-set-row">' +
+              '<span class="cs-set-lbl">' + t.langLbl + '</span>' +
+              '<div class="cs-seg">' +
+                '<button type="button" class="' + (CFG.language === 'zh' ? 'is-on' : '') + '" data-set-lang="zh">中文</button>' +
+                '<button type="button" class="' + (CFG.language === 'en' ? 'is-on' : '') + '" data-set-lang="en">EN</button>' +
+              '</div>' +
+            '</div>' +
+            '<div class="cs-set-row">' +
+              '<span class="cs-set-lbl">' + t.linesLbl + '</span>' +
+              '<div class="cs-seg">' +
+                '<button type="button" class="' + (CFG.dashedLines === 'always' ? 'is-on' : '') + '" data-set-lines="always">' + t.linesAlways + '</button>' +
+                '<button type="button" class="' + (CFG.dashedLines === 'hover' ? 'is-on' : '') + '" data-set-lines="hover">' + t.linesHover + '</button>' +
+              '</div>' +
+            '</div>' +
+            '<div class="cs-set-row">' +
+              '<div><div class="cs-set-lbl">' + t.guardLbl + '</div><div class="cs-set-sub">' + t.guardSub + '</div></div>' +
+              '<label class="cs-switch"><input type="checkbox" id="cs-set-guard" ' + (CFG.silentRegressionGuard ? 'checked' : '') + ' /><span class="cs-slider"></span></label>' +
+            '</div>' +
+            '<div class="cs-set-row">' +
+              '<span class="cs-set-lbl">' + t.archLbl + '</span>' +
+              '<div class="cs-seg">' +
+                '<button type="button" class="' + (CFG.architectureMode === 'auto' ? 'is-on' : '') + '" data-set-arch="auto">' + t.archAuto + '</button>' +
+                '<button type="button" class="' + (CFG.architectureMode === 'heuristic' ? 'is-on' : '') + '" data-set-arch="heuristic">' + t.archLocal + '</button>' +
+                '<button type="button" class="' + (CFG.architectureMode === 'llm' ? 'is-on' : '') + '" data-set-arch="llm">' + t.archLlm + '</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="cs-set-group">' +
+            '<div class="cs-set-row">' +
+              '<span class="cs-set-lbl">' + t.llmLbl + '</span>' +
+              '<label class="cs-switch"><input type="checkbox" id="cs-set-llm" ' + (CFG.llm.enabled ? 'checked' : '') + ' /><span class="cs-slider"></span></label>' +
+            '</div>' +
+            '<div class="cs-set-row" style="flex-direction:column;align-items:stretch;gap:7px">' +
+              '<input class="cs-input" id="cs-set-url" placeholder="https://api.openai.com/v1" value="' + escHtml(CFG.llm.baseUrl || '') + '" />' +
+              '<input class="cs-input" id="cs-set-model" placeholder="gpt-4o-mini" value="' + escHtml(CFG.llm.model || '') + '" />' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="cs-sheet-foot">' +
+          '<button type="button" class="cs-btn-primary" id="cs-save-settings">' + t.saveBtn + '</button>' +
+        '</div>';
+
+      backdropEl.classList.add('is-open');
+      document.getElementById('cs-close-btn')?.addEventListener('click', closeSheet);
+
+      sheetEl.querySelectorAll('[data-set-lang]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          CFG.language = btn.dataset.setLang;
+          renderBoard();
+          openSettingsSheet();
+        });
+      });
+      sheetEl.querySelectorAll('[data-set-lines]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          CFG.dashedLines = btn.dataset.setLines;
+          sheetEl.querySelectorAll('[data-set-lines]').forEach(b => b.classList.toggle('is-on', b.dataset.setLines === CFG.dashedLines));
+          drawDashedLines();
+        });
+      });
+      sheetEl.querySelectorAll('[data-set-arch]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          CFG.architectureMode = btn.dataset.setArch;
+          sheetEl.querySelectorAll('[data-set-arch]').forEach(b => b.classList.toggle('is-on', b.dataset.setArch === CFG.architectureMode));
+        });
+      });
+
+      const saveBtn = document.getElementById('cs-save-settings');
+      saveBtn?.addEventListener('click', async () => {
+        CFG.silentRegressionGuard = Boolean(document.getElementById('cs-set-guard')?.checked);
+        CFG.llm.enabled = Boolean(document.getElementById('cs-set-llm')?.checked);
+        CFG.llm.baseUrl = document.getElementById('cs-set-url')?.value?.trim() || 'https://api.openai.com/v1';
+        CFG.llm.model = document.getElementById('cs-set-model')?.value?.trim() || 'gpt-4o-mini';
+
+        const patch = {
+          language: CFG.language,
+          dashedLines: CFG.dashedLines,
+          silentRegressionGuard: CFG.silentRegressionGuard,
+          architectureMode: CFG.architectureMode,
+          llm: { enabled: CFG.llm.enabled, baseUrl: CFG.llm.baseUrl, model: CFG.llm.model },
+        };
+
+        let persistedViaApi = false;
+        if (location.protocol === 'http:' || location.protocol === 'https:') {
+          try {
+            const res = await fetch('/api/settings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(patch),
+            });
+            persistedViaApi = res.ok;
+          } catch {}
+        }
+
+        window.parent?.postMessage({ type: 'codesight:saveSettings', patch }, '*');
+        if (!persistedViaApi) {
+          const syncCmd = 'Call codesight_settings with action="set" and ' + JSON.stringify(patch);
+          try { await navigator.clipboard.writeText(syncCmd); } catch {}
+        }
+        saveBtn.textContent = persistedViaApi ? t.saved : t.savedCopy;
+        setTimeout(() => { saveBtn.textContent = t.saveBtn; }, 1400);
+      });
+    }
+
+    function closeSheet() {
+      activeModalId = null;
+      settingsOpen = false;
       hoveredId = DATA.activeDiagnosis?.targetNodeId || null;
       backdropEl.classList.remove('is-open');
-      updateHoverState();
+      updateHover();
     }
 
+    document.querySelectorAll('[data-lang-btn]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        CFG.language = btn.dataset.langBtn;
+        renderBoard();
+      });
+    });
+    document.getElementById('cs-open-settings')?.addEventListener('click', openSettingsSheet);
+    document.getElementById('cs-open-fault')?.addEventListener('click', () => {
+      if (DATA.activeDiagnosis?.targetNodeId) openFileSheet(DATA.activeDiagnosis.targetNodeId);
+    });
     backdropEl.addEventListener('click', (e) => {
-      if (e.target === backdropEl) closeModal();
+      if (e.target === backdropEl) closeSheet();
     });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeModal();
+      if (e.key === 'Escape') closeSheet();
     });
-    window.addEventListener('resize', drawDirectionalDashedLines);
+    window.addEventListener('resize', drawDashedLines);
 
-    const faultBannerBtn = document.getElementById('cs-open-fault');
-    if (faultBannerBtn && DATA.activeDiagnosis?.targetNodeId) {
-      faultBannerBtn.addEventListener('click', () => openModal(DATA.activeDiagnosis.targetNodeId));
-    }
-
-    renderColumns();
+    renderBoard();
   `;
 
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${config.language === 'en' ? 'en' : 'zh-CN'}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>CodeSight · ${esc(payload.repoName)}</title>
-  <style>${BOARD_CSS}</style>
+  <style>${APPLE_CSS}</style>
 </head>
 <body>
-  <div class="cs-board">
-    <header class="cs-topbar">
+  <div class="cs-shell">
+    <header class="cs-bar">
       <div class="cs-brand">
-        <span class="cs-logo">${LOGO_SVG}</span>
-        <div>
-          <div class="cs-title">${esc(payload.repoName)} · ${esc(payload.archetypeLabel || '竖排架构总览')}</div>
-          <div class="cs-sub">${esc(payload.projectHeadline)} · 共 ${payload.totalFiles} 个文件</div>
-        </div>
+        <span class="cs-mark">${LOGO_SVG}</span>
+        <span class="cs-brand-name">CodeSight</span>
+        <span class="cs-brand-repo">· ${esc(payload.repoName)}</span>
       </div>
-      <div class="cs-legend">
-        <span class="cs-legend-item" style="color:var(--cs-blue)"><span class="cs-dash-sample"></span>依赖谁</span>
-        <span class="cs-legend-item" style="color:var(--cs-amber)"><span class="cs-dash-sample"></span>影响谁</span>
+      <div class="cs-bar-right">
+        <div class="cs-seg" role="group" aria-label="Language">
+          <button type="button" data-lang-btn="zh" class="${config.language !== 'en' ? 'is-on' : ''}">中文</button>
+          <button type="button" data-lang-btn="en" class="${config.language === 'en' ? 'is-on' : ''}">EN</button>
+        </div>
+        <button type="button" class="cs-icon-btn" id="cs-open-settings" title="Settings">${GEAR_SVG}</button>
       </div>
     </header>
 
     ${
       diag
-        ? `<div class="cs-fault-banner">
-            <span><strong>当前报错：</strong>${esc(diag.headline)}</span>
-            <button type="button" class="cs-fault-btn" id="cs-open-fault">查看报错与修复方案</button>
+        ? `<div class="cs-fault-strip">
+            <div class="cs-fault-msg">
+              <span class="cs-fault-dot"></span>
+              <span class="cs-fault-text">${esc(diag.headline)}</span>
+            </div>
+            <button type="button" class="cs-fault-act" id="cs-open-fault">${config.language === 'en' ? 'Inspect fix' : '查看修复'}</button>
           </div>`
         : ''
     }
 
     <div class="cs-stage" id="cs-stage">
       <svg class="cs-svg" id="cs-svg"></svg>
-      <div class="cs-columns" id="cs-columns"></div>
+      <div class="cs-cols" id="cs-cols"></div>
     </div>
+
+    <footer class="cs-foot">
+      <span class="cs-foot-hint" id="cs-foot-hint"></span>
+      <span class="cs-foot-legend">
+        <span id="cs-leg-up" style="color:var(--cs-blue)"></span>
+        <span id="cs-leg-down" style="color:var(--cs-amber)"></span>
+      </span>
+    </footer>
   </div>
 
-  <div class="cs-modal-backdrop" id="cs-modal-backdrop">
-    <div class="cs-modal" id="cs-modal" role="dialog" aria-modal="true"></div>
+  <div class="cs-backdrop" id="cs-backdrop">
+    <div class="cs-sheet" id="cs-sheet" role="dialog" aria-modal="true"></div>
   </div>
 
   <script>${script}</script>
+</body>
+</html>`;
+}
+
+/**
+ * Dedicated Apple-style interactive Settings Card for the `codesight_settings` MCP tool.
+ */
+export function renderSettingsCardHtml(config: CodeSightConfig, configPath: string): string {
+  const isEn = config.language === 'en';
+  return `<!doctype html>
+<html lang="${isEn ? 'en' : 'zh-CN'}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>CodeSight Settings</title>
+  <style>${APPLE_CSS}</style>
+</head>
+<body>
+  <div class="cs-shell">
+    <header class="cs-bar">
+      <div class="cs-brand">
+        <span class="cs-mark">${LOGO_SVG}</span>
+        <span class="cs-brand-name">CodeSight</span>
+        <span class="cs-brand-repo">· ${isEn ? 'Settings' : '设置'}</span>
+      </div>
+      <span style="font-size:11px;color:var(--cs-faint);font-family:ui-monospace,monospace">${esc(configPath.replace(/^\/Users\/[^/]+/, '~'))}</span>
+    </header>
+    <div style="padding:14px 16px;background:var(--cs-canvas);display:flex;flex-direction:column;gap:10px">
+      <div class="cs-set-group">
+        <div class="cs-set-row">
+          <span class="cs-set-lbl">${isEn ? 'Language' : '界面语言'}</span>
+          <span style="font-size:12px;color:var(--cs-muted)">${config.language === 'en' ? 'English' : '中文'}</span>
+        </div>
+        <div class="cs-set-row">
+          <span class="cs-set-lbl">${isEn ? 'Flow Lines' : '关联虚线'}</span>
+          <span style="font-size:12px;color:var(--cs-muted)">${config.dashedLines === 'always' ? (isEn ? 'Always' : '常显') : (isEn ? 'Hover only' : '仅悬停')}</span>
+        </div>
+        <div class="cs-set-row">
+          <span class="cs-set-lbl">${isEn ? 'Silent Regression Guard' : '静默回归拦截'}</span>
+          <span style="font-size:12px;color:${config.silentRegressionGuard ? 'var(--cs-green)' : 'var(--cs-muted)'}">${config.silentRegressionGuard ? (isEn ? 'On' : '已开启') : (isEn ? 'Off' : '已关闭')}</span>
+        </div>
+        <div class="cs-set-row">
+          <span class="cs-set-lbl">${isEn ? 'Architecture' : '架构分层'}</span>
+          <span style="font-size:12px;color:var(--cs-muted)">${esc(config.architectureMode)}</span>
+        </div>
+        <div class="cs-set-row">
+          <span class="cs-set-lbl">${isEn ? 'BYOK Model' : '小模型增强'}</span>
+          <span style="font-size:12px;color:var(--cs-muted);font-family:ui-monospace,monospace">${config.llm.enabled ? esc(config.llm.model) : (isEn ? 'Local (0-token)' : '纯本地（0 Token）')}</span>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>`;
 }
@@ -1183,19 +1537,19 @@ export function renderTraceCardHtml(trace: SymbolTraceReport): string {
   const rows = trace.matches
     .map(
       (m) => `
-      <div style="padding:14px 18px;border-top:1px solid var(--cs-border)">
+      <div style="padding:12px 16px;border-top:1px solid var(--cs-hairline)">
         <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px">
-          <strong style="font-family:var(--font-mono,monospace);font-size:13px">${esc(m.symbol.name)}</strong>
-          <span style="font-size:12px;color:var(--cs-muted);font-family:var(--font-mono,monospace)">${esc(m.symbol.file.split('/').pop() ?? m.symbol.file)} 第 ${m.symbol.startLine} 行</span>
+          <strong style="font-family:ui-monospace,monospace;font-size:12.5px">${esc(m.symbol.name)}</strong>
+          <span style="font-size:11.5px;color:var(--cs-muted);font-family:ui-monospace,monospace">${esc(m.symbol.file.split('/').pop() ?? m.symbol.file)}:${m.symbol.startLine}</span>
         </div>
-        <div style="font-size:12.5px;color:var(--cs-muted)">
-          被以下地方用到（${m.calledBy.length} 处）：${esc(
-            m.calledBy.map((e) => `${e.callerName}（${e.callerFile.split('/').pop()} 第 ${e.callerLine} 行）`).join('、') || '暂无其他文件直接调用'
+        <div style="font-size:12px;color:var(--cs-muted)">
+          ${esc(
+            m.calledBy.map((e) => `${e.callerName} (${e.callerFile.split('/').pop()}:${e.callerLine})`).join(' · ') || 'No direct callers'
           )}
         </div>
       </div>`
     )
     .join('');
 
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CodeSight Trace</title><style>${BOARD_CSS}</style></head><body><div class="cs-board"><div class="cs-topbar"><div class="cs-title">函数调用追踪 · ${esc(trace.querySymbol)}</div><div class="cs-sub">${trace.traceMs}ms</div></div>${rows || '<div style="padding:16px;font-size:13px;color:var(--cs-muted)">未找到对应函数或组件。</div>'}</div></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CodeSight Trace</title><style>${APPLE_CSS}</style></head><body><div class="cs-shell"><div class="cs-bar"><div class="cs-brand"><span class="cs-mark">${LOGO_SVG}</span><span class="cs-brand-name">${esc(trace.querySymbol)}</span></div><span style="font-size:11px;color:var(--cs-faint)">${trace.traceMs}ms</span></div>${rows || '<div style="padding:14px 16px;font-size:12px;color:var(--cs-muted)">No matching symbol.</div>'}</div></body></html>`;
 }

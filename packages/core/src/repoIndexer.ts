@@ -208,6 +208,39 @@ function resolveImportToRepoFile(
     if (allFileSet.has(target)) return { internal: target };
   }
 
+  if (fromRelPosix.endsWith('.py')) {
+    const fromDir = path.posix.dirname(fromRelPosix);
+    const dotMatch = spec.match(/^(\.+)(.*)$/);
+    if (dotMatch) {
+      const dots = dotMatch[1].length;
+      const rest = dotMatch[2].replace(/\./g, '/');
+      let baseDir = fromDir === '.' ? '' : fromDir;
+      for (let i = 1; i < dots; i++) {
+        baseDir = path.posix.dirname(baseDir);
+        if (baseDir === '.') baseDir = '';
+      }
+      const joined = rest ? path.posix.normalize(path.posix.join(baseDir, rest)) : baseDir;
+      const pyCandidates = [`${joined}.py`, `${joined}/__init__.py`];
+      for (const c of pyCandidates) {
+        if (allFileSet.has(c)) return { internal: c };
+      }
+      return {};
+    }
+
+    // Absolute internal Python module, e.g. `app.services.auth` or `src.models`
+    const dottedPath = spec.replace(/\./g, '/');
+    const absCandidates = [
+      `${dottedPath}.py`,
+      `${dottedPath}/__init__.py`,
+      `src/${dottedPath}.py`,
+      `src/${dottedPath}/__init__.py`,
+    ];
+    for (const c of absCandidates) {
+      if (allFileSet.has(c)) return { internal: c };
+    }
+    return { external: spec.split('.')[0] };
+  }
+
   if (spec.startsWith('.')) {
     const fromDir = path.posix.dirname(fromRelPosix);
     const rawTarget = path.posix.normalize(path.posix.join(fromDir, spec));

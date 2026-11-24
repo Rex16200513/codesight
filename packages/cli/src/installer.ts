@@ -27,6 +27,13 @@ function getRepoRootFromCli(): string {
 
 function getMcpEntryCommand(engineRoot: string): { command: string; args: string[] } {
   const nodeBin = process.execPath;
+  const builtJs = path.join(engineRoot, 'packages/mcp-server/dist/index.js');
+  if (fs.existsSync(builtJs)) {
+    return {
+      command: nodeBin,
+      args: [builtJs],
+    };
+  }
   const mcpScript = path.join(engineRoot, 'packages/mcp-server/src/index.ts');
   return {
     command: nodeBin,

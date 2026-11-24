@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
@@ -6,8 +8,11 @@ import {
   McpEnrichedGraphProvider,
   buildVisualProjectMap,
   generateRepoMap,
+  loadCodeSightConfig,
+  maskConfigForDisplay,
   projectProblemOntoRepo,
   resolveProjectArchitecture,
+  saveCodeSightConfig,
   traceSymbol,
 } from './engine.ts';
 
@@ -110,4 +115,65 @@ test('resolveProjectArchitecture detects Frontend/Backend/Shared separation and 
   const visual = buildVisualProjectMap(index, graph, callGraph, undefined, customBp);
   assert.equal(visual.zones.length, 2);
   assert.equal(visual.archetypeLabel, 'AI 定制前后端分层');
+});
+
+test('Python parser resolves relative/dotted imports and detects FastAPI + Streamlit separation', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codesight-py-'));
+  try {
+    fs.mkdirSync(path.join(tmpDir, 'app/services'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, 'app/models.py'),
+      'class User:\n    pass\n\ndef serialize_user(u):\n    return str(u)\n'
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'app/services/auth.py'),
+      'from ..models import User, serialize_user\n\ndef verify_token(tok):\n    return serialize_user(tok)\n'
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'app/server.py'),
+      'from fastapi import FastAPI\nfrom app.services.auth import verify_token\n\napp = FastAPI()\ndef login():\n    return verify_token("ok")\n'
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'ui.py'),
+      'import streamlit as st\nfrom app.server import login\n\ndef render_page():\n    return login()\n'
+    );
+
+    const { index, graph } = await generateRepoMap(tmpDir, { persistCache: false });
+    assert.ok(index.files['app/services/auth.py'].resolvedImports.includes('app/models.py'));
+    assert.ok(index.files['app/server.py'].resolvedImports.includes('app/services/auth.py'));
+    assert.ok(graph.nodes['app/models.py'].totalDownstreamReach >= 2);
+
+    const bp = await resolveProjectArchitecture(index, graph, { persistCache: false });
+    assert.ok(bp.zones.some((z) => z.kind === 'frontend'));
+    assert.ok(bp.zones.some((z) => z.kind === 'backend'));
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('Unified CodeSight config persists settings cleanly and masks API keys', () => {
+  const tmpCfg = path.join(os.tmpdir(), `codesight-cfg-${Date.now()}.json`);
+  const prev = process.env.CODESIGHT_CONFIG_PATH;
+  process.env.CODESIGHT_CONFIG_PATH = tmpCfg;
+  try {
+    const saved = saveCodeSightConfig({
+      language: 'en',
+      dashedLines: 'hover',
+      llm: { enabled: true, model: 'gpt-4o-mini', apiKey: 'sk-secret-1234' },
+    });
+    assert.equal(saved.language, 'en');
+    assert.equal(saved.dashedLines, 'hover');
+
+    const loaded = loadCodeSightConfig();
+    assert.equal(loaded.language, 'en');
+    assert.equal(loaded.llm.apiKey, 'sk-secret-1234');
+
+    const masked = maskConfigForDisplay(loaded);
+    assert.equal(masked.llm.apiKey, '••••••••');
+    assert.equal(masked.llmKeyConfigured, true);
+  } finally {
+    if (prev === undefined) delete process.env.CODESIGHT_CONFIG_PATH;
+    else process.env.CODESIGHT_CONFIG_PATH = prev;
+    if (fs.existsSync(tmpCfg)) fs.unlinkSync(tmpCfg);
+  }
 });

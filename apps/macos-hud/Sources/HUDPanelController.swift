@@ -25,6 +25,14 @@ final class HUDPanelController: NSObject, NSApplicationDelegate {
         viewModel.onCloseRequested = {
             NSApp.terminate(nil)
         }
+        viewModel.onWindowSettingsChanged = { [weak self] alwaysOnTop, opacity in
+            guard let panel = self?.panel else { return }
+            panel.level = alwaysOnTop ? .floating : .normal
+            panel.alphaValue = CGFloat(max(0.75, min(1.0, opacity)))
+        }
+
+        panel.level = viewModel.config.hud.alwaysOnTop ? .floating : .normal
+        panel.alphaValue = CGFloat(max(0.75, min(1.0, viewModel.config.hud.opacity)))
 
         showPanel()
     }
@@ -71,6 +79,7 @@ final class HUDPanelController: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "显示 / 隐藏 CodeSight", action: #selector(togglePanelVisibility), keyEquivalent: "g")
         menu.addItem(withTitle: "展开 / 收起胶囊", action: #selector(toggleCollapseFromMenu), keyEquivalent: "m")
         menu.addItem(withTitle: "切换本地项目目录…", action: #selector(pickFolderFromMenu), keyEquivalent: "o")
+        menu.addItem(withTitle: "设置…", action: #selector(openSettingsFromMenu), keyEquivalent: ",")
         menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "退出 CodeSight", action: #selector(quitApp), keyEquivalent: "q")
         for item in menu.items { item.target = self }
@@ -114,6 +123,12 @@ final class HUDPanelController: NSObject, NSApplicationDelegate {
     @objc private func pickFolderFromMenu() {
         if !panel.isVisible { showPanel() }
         viewModel.pickRepositoryFolder()
+    }
+
+    @objc private func openSettingsFromMenu() {
+        if !panel.isVisible { showPanel() }
+        if viewModel.isCollapsed { viewModel.toggleCollapsed() }
+        viewModel.showSettings = true
     }
 
     @objc private func quitApp() {

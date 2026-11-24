@@ -3,13 +3,24 @@ import {
   askRepository,
   buildVisualProjectMap,
   generateRepoMap,
+  getGlobalConfigPath,
+  loadCodeSightConfig,
+  maskConfigForDisplay,
   projectProblemOntoRepo,
+  resetCodeSightConfig,
   resolveProjectArchitecture,
   safeGitDiff,
+  saveCodeSightConfig,
+  toActiveLLMConfig,
   traceSymbol,
+  type CodeSightConfigPatch,
   type HostArchitectureOverride,
 } from '@codesight/core/engine';
-import { renderTraceCardHtml, renderVisualProjectMapHtml } from './uiCards.ts';
+import {
+  renderSettingsCardHtml,
+  renderTraceCardHtml,
+  renderVisualProjectMapHtml,
+} from './uiCards.ts';
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -27,7 +38,7 @@ interface JsonRpcResponse {
 
 const SERVER_INFO = {
   name: 'codesight',
-  version: '0.5.0',
+  version: '0.9.0',
 };
 
 const TOOL_DEFINITIONS = [
@@ -117,6 +128,49 @@ const TOOL_DEFINITIONS = [
     },
     _meta: {
       ui: { resourceUri: 'ui://codesight/diagnose/latest' },
+    },
+  },
+  {
+    name: 'codesight_settings',
+    description:
+      'View, update, or reset unified CodeSight settings (~/.codesight/config.json) shared across AI Agent plugins, CLI, and macOS HUD (language, dashed flow lines, silent regression guard, architecture mode, optional BYOK LLM).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['get', 'set', 'reset'],
+          description: 'Action to perform (defaults to "get").',
+        },
+        language: { type: 'string', enum: ['zh', 'en'] },
+        dashedLines: { type: 'string', enum: ['always', 'hover'] },
+        autoOpenBrowser: { type: 'boolean' },
+        silentRegressionGuard: { type: 'boolean' },
+        architectureMode: { type: 'string', enum: ['auto', 'heuristic', 'llm'] },
+        llm: {
+          type: 'object',
+          properties: {
+            enabled: { type: 'boolean' },
+            baseUrl: { type: 'string' },
+            apiKey: { type: 'string' },
+            model: { type: 'string' },
+          },
+        },
+        hud: {
+          type: 'object',
+          properties: {
+            alwaysOnTop: { type: 'boolean' },
+            opacity: { type: 'number' },
+          },
+        },
+        repoDir: {
+          type: 'string',
+          description: 'Optional repo root if reading/writing project-scoped config.',
+        },
+      },
+    },
+    _meta: {
+      ui: { resourceUri: 'ui://codesight/settings/latest' },
     },
   },
 ];
@@ -236,12 +290,14 @@ export class CodeSightMcpHandler {
     const repoDir = typeof args.repoDir === 'string' && args.repoDir.trim() ? args.repoDir : process.cwd();
 
     if (toolName === 'codesight_map') {
+      const cfg = loadCodeSightConfig(repoDir);
       const { map, index, graph, callGraph } = await generateRepoMap(repoDir);
       const override = args.architectureOverride as HostArchitectureOverride | undefined;
-      const blueprint = await resolveProjectArchitecture(index, graph, { override });
+      const llmConfig = cfg.architectureMode === 'heuristic' ? undefined : toActiveLLMConfig(cfg);
+      const blueprint = await resolveProjectArchitecture(index, graph, { override, llmConfig });
       const visualMap = buildVisualProjectMap(index, graph, callGraph, undefined, blueprint);
       const uri = 'ui://codesight/map/latest';
-      const html = renderVisualProjectMapHtml(visualMap);
+      const html = renderVisualProjectMapHtml(visualMap, cfg);
       this.uiResources.set(uri, { title: `CodeSight Map (${map.repoName})`, html });
 
       const textSummary = [
@@ -322,16 +378,20 @@ export class CodeSightMcpHandler {
     }
 
     if (toolName === 'codesight_diagnose') {
+      const cfg = loadCodeSightConfig(repoDir);
       const rawError = typeof args.rawError === 'string' ? args.rawError : '';
       const useGit = Boolean(args.useGit);
       const rawDiff = useGit ? safeGitDiff(repoDir).diff : '';
+      const llmConfig = toActiveLLMConfig(cfg);
       const { index, graph, callGraph } = await generateRepoMap(repoDir);
-      const blueprint = await resolveProjectArchitecture(index, graph);
-      const report = await projectProblemOntoRepo(repoDir, { rawError, rawDiff });
+      const blueprint = await resolveProjectArchitecture(index, graph, {
+        llmConfig: cfg.architectureMode === 'heuristic' ? undefined : llmConfig,
+      });
+      const report = await projectProblemOntoRepo(repoDir, { rawError, rawDiff }, { llmConfig });
       const visualMap = buildVisualProjectMap(index, graph, callGraph, report, blueprint);
 
       const uri = 'ui://codesight/diagnose/latest';
-      const html = renderVisualProjectMapHtml(visualMap);
+      const html = renderVisualProjectMapHtml(visualMap, cfg);
       this.uiResources.set(uri, { title: `CodeSight Diagnose (${report.repoName})`, html });
 
       const lines = [
@@ -370,6 +430,67 @@ export class CodeSightMcpHandler {
             { type: 'resource', resource: { uri, mimeType: 'text/html+mcp', text: html } },
           ],
           structuredContent: report,
+        },
+      };
+    }
+
+    if (toolName === 'codesight_settings') {
+      const action = typeof args.action === 'string' ? args.action : 'get';
+      let cfg;
+      if (action === 'reset') {
+        cfg = resetCodeSightConfig();
+      } else if (action === 'set') {
+        const patch: CodeSightConfigPatch = {};
+        if (args.language === 'zh' || args.language === 'en') patch.language = args.language;
+        if (args.dashedLines === 'always' || args.dashedLines === 'hover') patch.dashedLines = args.dashedLines;
+        if (typeof args.autoOpenBrowser === 'boolean') patch.autoOpenBrowser = args.autoOpenBrowser;
+        if (typeof args.silentRegressionGuard === 'boolean') {
+          patch.silentRegressionGuard = args.silentRegressionGuard;
+        }
+        if (
+          args.architectureMode === 'auto' ||
+          args.architectureMode === 'heuristic' ||
+          args.architectureMode === 'llm'
+        ) {
+          patch.architectureMode = args.architectureMode;
+        }
+        if (args.llm && typeof args.llm === 'object') {
+          patch.llm = args.llm as CodeSightConfigPatch['llm'];
+        }
+        if (args.hud && typeof args.hud === 'object') {
+          patch.hud = args.hud as CodeSightConfigPatch['hud'];
+        }
+        cfg = saveCodeSightConfig(patch);
+      } else {
+        cfg = loadCodeSightConfig(repoDir);
+      }
+
+      const masked = maskConfigForDisplay(cfg);
+      const configPath = getGlobalConfigPath();
+      const uri = 'ui://codesight/settings/latest';
+      const html = renderSettingsCardHtml(cfg, configPath);
+      this.uiResources.set(uri, { title: 'CodeSight Settings', html });
+
+      const textSummary = [
+        `CodeSight Settings (${configPath})`,
+        `- language: ${masked.language}`,
+        `- dashedLines: ${masked.dashedLines}`,
+        `- silentRegressionGuard: ${masked.silentRegressionGuard}`,
+        `- architectureMode: ${masked.architectureMode}`,
+        `- autoOpenBrowser: ${masked.autoOpenBrowser}`,
+        `- llm: ${masked.llm.enabled ? `${masked.llm.model} (${masked.llm.baseUrl})` : 'off (0-token local)'}`,
+        `- hud: alwaysOnTop=${masked.hud.alwaysOnTop}, opacity=${masked.hud.opacity}`,
+      ].join('\n');
+
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          content: [
+            { type: 'text', text: textSummary },
+            { type: 'resource', resource: { uri, mimeType: 'text/html+mcp', text: html } },
+          ],
+          structuredContent: { configPath, config: masked },
         },
       };
     }

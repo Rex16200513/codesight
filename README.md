@@ -1,47 +1,95 @@
-# CodeSight — Universal GraphRAG Plugin (MCP Apps) & Apple Floating HUD for Vibe Coding
+# CodeSight
 
-> **Graph-RAG helps AI read your code. CodeSight plugs into Antigravity, Claude Code, Cursor, VS Code, Codex, and ChatGPT to help *you* see what every file does, what broke, and which fix direction to choose in seconds.**
+**See what your AI changed — before it breaks.**
 
-## Works Inside All Mainstream AI Agent Products (`v0.5.0`)
+CodeSight is a local-first GraphRAG comprehension and diagnostic engine for AI-assisted coding. It builds an AST call graph and dependency map of your repository (TypeScript, JavaScript, Python), catches silent regressions (`as any`, empty `catch`, removed guards) with **zero LLM tokens**, and renders an interactive layered architecture board inside your AI agent or as a native macOS HUD.
 
-| Platform | Transport & Integration | One-Command Setup |
-| :--- | :--- | :--- |
-| **Antigravity** | Native Plugin (`plugin.json` + `mcp_config.json` + `SKILL.md` + `rules/AGENTS.md`) + `ui://` MCP App cards | `npm run cs -- install --target antigravity` (add `--global` for all projects) |
-| **Claude Code** | Local Stdio MCP (`.mcp.json`) + `.claude-plugin` manifest | `npm run cs -- install --target claude-code` |
-| **Claude Desktop** | Local Stdio MCP + inline `ui://` MCP App cards | `npm run cs -- install --target claude-desktop` |
-| **Cursor** | Local Stdio MCP (`.cursor/mcp.json`) | `npm run cs -- install --target cursor` |
-| **VS Code / Copilot** | Local Stdio MCP (`.vscode/mcp.json`) | `npm run cs -- install --target vscode` |
-| **OpenAI Codex CLI** | Local Stdio MCP (`~/.codex/config.toml`) | `npm run cs -- install --target codex` |
-| **ChatGPT Apps** | Streamable HTTP MCP (`/mcp`) + interactive `ui://` cards | `npm run mcp:http` (exposes `http://127.0.0.1:4318/mcp`) |
-| **macOS Desktop HUD** | Optional 1.5MB native Swift 6 floating glass HUD (`CodeSight.app`) | `npm run dev:sidecar` + `npm run hud:open` |
+---
 
-> Preview every config safely before writing anything:
-> ```bash
-> npm run cs -- install --target all --dry-run
-> ```
+## Why CodeSight
 
-## MCP Tools & Interactive Cards Exposed
+- **Deterministic & Local-First** — Real TypeScript Compiler AST + Python import/call parser + hybrid BM25/vector RRF. No code leaves your machine by default.
+- **Visual Architecture & Prototypes** — Vertical Frontend / Backend / Core map with directional dashed dependency lines and UI prototype wireframes on click.
+- **Silent Regression Guard** — Flags when an AI "fixes" an error by silently removing validation guards, swallowing exceptions, or adding `as any`.
+- **Works Everywhere** — Native MCP + MCP Apps server (`stdio` and Streamable HTTP `/mcp`) for Antigravity, Claude Code, Claude Desktop, Cursor, VS Code, Codex, and ChatGPT, plus an optional native SwiftUI macOS Floating HUD for traditional IDE users.
+- **Unified Settings** — One `~/.codesight/config.json` shared across Agent plugins (`codesight_settings` + in-card `⚙`), CLI (`codesight config`), and the macOS HUD Settings panel.
 
-- `codesight_map` — Incremental AST repo comprehension map + core hub blast radius + `ui://codesight/map/latest`
-- `codesight_ask` — Hybrid GraphRAG retrieval (Exact + Okapi BM25 + Bilingual Vector + 1-hop Graph RRF, ~97% token savings)
-- `codesight_trace` — Cross-file AST function/component call graph + `ui://codesight/trace/latest`
-- `codesight_diagnose` — Error & `git diff` projection onto the live dependency graph: Plain Diagnosis, Blast Radius, Safe Zones, Silent Regression detection (removed guards, empty `catch`, `as any`), and Fix Direction cards (`ui://codesight/diagnose/latest`)
+---
 
-## Modular Architecture
-
-```text
-packages/core        # Browser-safe schema & static analyzer + Node GraphRAG engine (AST, Call Graph, RRF, MCP GraphProvider)
-packages/mcp-server  # Dual-transport MCP + MCP Apps server (Stdio + Streamable HTTP /mcp + Apple-styled ui:// HTML cards)
-packages/cli         # CLI (`map | ask | trace | diagnose | install`)
-packages/sidecar     # Warm local HTTP/SSE bridge (zero macOS TCC popups)
-packages/ui          # Host-portable React HUD components
-plugins/codesight    # Native Antigravity & Claude Code plugin bundle (plugin.json, SKILL.md, rules/AGENTS.md)
-apps/macos-hud       # Native macOS Swift 6 / SwiftUI Always-on-Top Apple Floating HUD (CodeSight.app)
-```
-
-## Quick Verification
+## Quick Start
 
 ```bash
-npm install
-npm run typecheck && npm test && npm run build
+git clone https://github.com/Rex16200513/codesight.git
+cd codesight
+npm install && npm run build
 ```
+
+### 1. Install into your AI Agent
+
+```bash
+# Install for Cursor, Claude Code, Antigravity, VS Code, Codex, or all
+node packages/cli/dist/cli.js install --target cursor
+node packages/cli/dist/cli.js install --target claude-code
+node packages/cli/dist/cli.js install --target antigravity
+```
+
+Available MCP tools once installed:
+
+| Tool | Purpose |
+| --- | --- |
+| `codesight_map` | Build layered architecture map + interactive HTML card |
+| `codesight_ask` | Locate relevant files via hybrid BM25 + vector + 1-hop graph RRF |
+| `codesight_trace` | Trace cross-file callers & callees of any function or component |
+| `codesight_diagnose` | Project stack trace or `git diff` onto the graph for blast radius, silent regressions, and fix directions |
+| `codesight_settings` | View or update unified preferences (`language`, `dashedLines`, `silentRegressionGuard`, `architectureMode`, BYOK LLM) |
+
+### 2. Open the Interactive Board in Your Browser
+
+```bash
+# One-shot static preview
+node packages/cli/dist/cli.js map --open
+
+# Or run the local Sidecar (live map + persistent in-card settings at http://127.0.0.1:4317)
+npm run dev:sidecar
+```
+
+### 3. Manage Settings (CLI / Agent / HUD)
+
+```bash
+node packages/cli/dist/cli.js config show
+node packages/cli/dist/cli.js config set language en
+node packages/cli/dist/cli.js config set dashedLines hover
+node packages/cli/dist/cli.js config set silentRegressionGuard true
+```
+
+In your AI agent, simply ask: *"Open CodeSight settings"* or click the `⚙` icon directly in any CodeSight visual card.
+
+### 4. Optional: Native macOS Floating HUD (for VS Code / IDE users)
+
+```bash
+./apps/macos-hud/build.sh
+open apps/macos-hud/dist/CodeSight.app
+```
+
+Click the slider icon in the HUD header (or press `⌘,`) to configure Language, Always on Top, Opacity, Regression Guard, Flow Lines, and optional BYOK models — automatically synced with `~/.codesight/config.json`.
+
+---
+
+## Architecture
+
+```text
+packages/
+  core/        AST & Python parser, dependency/call graph, hybrid RRF, config store
+  mcp-server/  Stdio + Streamable HTTP (/mcp) server & Apple-minimalist MCP App cards
+  cli/         CLI (map, ask, trace, diagnose, config, install)
+  sidecar/     Local HTTP/SSE engine bridge & browser visual board (port 4317)
+  ui/          Shared React HUD components
+apps/
+  macos-hud/   Native SwiftUI + AppKit floating HUD (arm64 macOS)
+plugins/
+  codesight/   Antigravity & Claude Code native plugin bundle
+```
+
+## License
+
+MIT

@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - BYOK LLM Config (Persisted in UserDefaults)
+// MARK: - Unified Settings (~/.codesight/config.json, shared with Agent MCP Plugins & CLI)
 
 struct BYOKLLMConfig: Codable, Sendable, Equatable {
     var enabled: Bool
@@ -13,6 +13,35 @@ struct BYOKLLMConfig: Codable, Sendable, Equatable {
         baseUrl: "https://api.openai.com/v1",
         apiKey: "",
         model: "gpt-4o-mini"
+    )
+}
+
+struct HUDWindowConfig: Codable, Sendable, Equatable {
+    var alwaysOnTop: Bool
+    var opacity: Double
+
+    static let `default` = HUDWindowConfig(alwaysOnTop: true, opacity: 0.96)
+}
+
+struct UnifiedCodeSightConfig: Codable, Sendable, Equatable {
+    var schemaVersion: String
+    var language: String
+    var dashedLines: String
+    var autoOpenBrowser: Bool
+    var silentRegressionGuard: Bool
+    var architectureMode: String
+    var llm: BYOKLLMConfig
+    var hud: HUDWindowConfig
+
+    static let `default` = UnifiedCodeSightConfig(
+        schemaVersion: "1.0",
+        language: "zh",
+        dashedLines: "always",
+        autoOpenBrowser: false,
+        silentRegressionGuard: true,
+        architectureMode: "auto",
+        llm: .default,
+        hud: .default
     )
 }
 

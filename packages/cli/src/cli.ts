@@ -1,14 +1,26 @@
 #!/usr/bin/env node
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {
   askRepository,
+  buildVisualProjectMap,
   generateRepoMap,
+  getGlobalConfigPath,
+  loadCodeSightConfig,
+  maskConfigForDisplay,
   projectProblemOntoRepo,
+  resetCodeSightConfig,
+  resolveProjectArchitecture,
   safeGitDiff,
+  saveCodeSightConfig,
+  toActiveLLMConfig,
   traceSymbol,
+  type CodeSightConfigPatch,
   type McpGraphProviderConfig,
 } from '@codesight/core/engine';
+import { renderVisualProjectMapHtml } from '@codesight/mcp-server';
 import { installCodeSightPlugin, type AgentTarget } from './installer.ts';
 
 const C = {
@@ -69,20 +81,23 @@ function printHelp() {
 ${C.bold}CodeSight GraphRAG Engine CLI${C.reset} ${C.dim}— AST 函数调用图 + BM25/向量 RRF + 可插拔开源 Graph-RAG MCP${C.reset}
 
 用法:
-  ${C.cyan}npm run cs -- map [目录]${C.reset}
-      10 秒看懂任意陌生仓库：AST 增量索引 + 核心枢纽识别 + 每个文件人话职责
+  ${C.cyan}codesight map [dir] [--open]${C.reset}
+      Build AST + dependency map (pass --open to launch interactive visual board in browser)
 
-  ${C.cyan}npm run cs -- ask "<自然语言问题>" [目录]${C.reset}
-      用 BM25 + 向量 + 依赖图 RRF 混合检索，毫秒级定位相关文件及上下游关系
+  ${C.cyan}codesight ask "<question>" [dir]${C.reset}
+      Hybrid GraphRAG (BM25 + vector + 1-hop graph RRF) file & symbol search
 
-  ${C.cyan}npm run cs -- trace <函数或组件名> [目录]${C.reset}
-      跨文件函数/组件级调用图追踪：定位定义位置、谁调用了它、它调用了谁
+  ${C.cyan}codesight trace <symbol> [dir]${C.reset}
+      Cross-file AST caller/callee trace for any function, component, or class
 
-  ${C.cyan}npm run cs -- diagnose --error "<报错文本>" [目录]${C.reset}
-      把真实报错或 --git diff 投影到依赖图上：人话原因 + 函数调用链 + 爆炸半径 + 给 AI 的修改方向
+  ${C.cyan}codesight diagnose --error "<text>" | --git [dir]${C.reset}
+      Project errors or git diff onto the graph: blast radius, silent regressions, fix directions
 
-  ${C.cyan}npm run cs -- install --target <antigravity|claude-code|claude-desktop|cursor|vscode|codex|chatgpt|all>${C.reset}
-      一键将 CodeSight MCP App + Skill 插件安装到主流 AI Agent 软件（支持 --global / --dry-run）
+  ${C.cyan}codesight config [show | set <key> <value> | reset]${C.reset}
+      Manage unified settings (~/.codesight/config.json) shared by Agent plugins & macOS HUD
+
+  ${C.cyan}codesight install --target <antigravity|claude-code|claude-desktop|cursor|vscode|codex|chatgpt|all>${C.reset}
+      One-command plugin & MCP setup for mainstream AI agents (--global / --dry-run)
 
 可选参数:
   --mcp-cmd "<命令>"  挂载外部开源 Graph-RAG MCP（如 "cgc mcp start" / code-graph-rag / Serena）
@@ -90,8 +105,39 @@ ${C.bold}CodeSight GraphRAG Engine CLI${C.reset} ${C.dim}— AST 函数调用图
 `);
 }
 
-async function runMap(targetDir: string, asJson: boolean, mcpConfig?: McpGraphProviderConfig) {
-  const { map } = await generateRepoMap(targetDir, { mcpConfig });
+function openInDefaultBrowser(target: string) {
+  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
+  const args = process.platform === 'win32' ? ['/c', 'start', '', target] : [target];
+  const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+  child.unref();
+}
+
+async function runMap(
+  targetDir: string,
+  asJson: boolean,
+  mcpConfig?: McpGraphProviderConfig,
+  openBrowser = false
+) {
+  const cfg = loadCodeSightConfig(targetDir);
+  const { map, index, graph, callGraph } = await generateRepoMap(targetDir, { mcpConfig });
+  if (openBrowser || cfg.autoOpenBrowser) {
+    const llmConfig = cfg.architectureMode === 'heuristic' ? undefined : toActiveLLMConfig(cfg);
+    const blueprint = await resolveProjectArchitecture(index, graph, { llmConfig });
+    const visual = buildVisualProjectMap(index, graph, callGraph, undefined, blueprint);
+    const rawHtml = renderVisualProjectMapHtml(visual, cfg);
+    const pageHtml = rawHtml
+      .replace(
+        '<body>',
+        '<body style="background:var(--cs-canvas,#f5f5f7);min-height:100vh;padding:24px;display:flex;justify-content:center;align-items:flex-start"><div style="width:min(960px,100%)">'
+      )
+      .replace('</body>', '</div></body>');
+    const outPath = path.join(os.tmpdir(), `codesight-${map.repoName.replace(/[^a-zA-Z0-9_-]/g, '_')}.html`);
+    fs.writeFileSync(outPath, pageHtml, 'utf8');
+    openInDefaultBrowser(outPath);
+    if (!asJson) {
+      console.log(`${C.green}Opened interactive board:${C.reset} ${outPath}`);
+    }
+  }
   if (asJson) {
     console.log(JSON.stringify(map, null, 2));
     return;
@@ -214,7 +260,47 @@ async function main() {
     return;
   }
   if (command === 'map') {
-    await runMap(positional[0] || process.cwd(), asJson, mcpConfig);
+    await runMap(positional[0] || process.cwd(), asJson, mcpConfig, Boolean(flags.open));
+    return;
+  }
+  if (command === 'config') {
+    const sub = positional[0] || 'show';
+    if (sub === 'reset') {
+      const cfg = resetCodeSightConfig();
+      console.log(asJson ? JSON.stringify(maskConfigForDisplay(cfg), null, 2) : `Reset ${getGlobalConfigPath()}`);
+      return;
+    }
+    if (sub === 'set') {
+      const key = positional[1];
+      const val = positional[2];
+      if (!key || val === undefined) {
+        console.error('Usage: codesight config set <language|dashedLines|autoOpenBrowser|silentRegressionGuard|architectureMode|llm.enabled|llm.baseUrl|llm.model|hud.alwaysOnTop|hud.opacity> <value>');
+        process.exit(1);
+      }
+      const patch: CodeSightConfigPatch = {};
+      const asBool = val === 'true' || val === '1' || val === 'on';
+      if (key === 'language' && (val === 'zh' || val === 'en')) patch.language = val;
+      else if (key === 'dashedLines' && (val === 'always' || val === 'hover')) patch.dashedLines = val;
+      else if (key === 'autoOpenBrowser') patch.autoOpenBrowser = asBool;
+      else if (key === 'silentRegressionGuard') patch.silentRegressionGuard = asBool;
+      else if (key === 'architectureMode' && (val === 'auto' || val === 'heuristic' || val === 'llm')) {
+        patch.architectureMode = val;
+      } else if (key === 'llm.enabled') patch.llm = { enabled: asBool };
+      else if (key === 'llm.baseUrl') patch.llm = { baseUrl: val };
+      else if (key === 'llm.model') patch.llm = { model: val };
+      else if (key === 'llm.apiKey') patch.llm = { apiKey: val };
+      else if (key === 'hud.alwaysOnTop') patch.hud = { alwaysOnTop: asBool };
+      else if (key === 'hud.opacity') patch.hud = { opacity: Number(val) };
+      else {
+        console.error(`Unknown config key or invalid value: ${key}=${val}`);
+        process.exit(1);
+      }
+      const next = saveCodeSightConfig(patch);
+      console.log(asJson ? JSON.stringify(maskConfigForDisplay(next), null, 2) : `Saved ${key}=${val} → ${getGlobalConfigPath()}`);
+      return;
+    }
+    const current = maskConfigForDisplay(loadCodeSightConfig());
+    console.log(JSON.stringify({ configPath: getGlobalConfigPath(), config: current }, null, 2));
     return;
   }
   if (command === 'ask') {

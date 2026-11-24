@@ -1,6 +1,6 @@
 ---
 name: codesight
-description: Use CodeSight GraphRAG tools (`codesight_map`, `codesight_ask`, `codesight_trace`, `codesight_diagnose`) to understand unfamiliar repositories, check blast radius before editing shared files, detect silent regressions (removed guards, empty catch, `as any`), and present clear architectural fix directions to the user.
+description: Use CodeSight GraphRAG tools (`codesight_map`, `codesight_ask`, `codesight_trace`, `codesight_diagnose`, `codesight_settings`) to understand unfamiliar repositories, check blast radius before editing shared files, detect silent regressions (removed guards, empty catch, `as any`), adjust user settings, and present clear architectural fix directions to the user.
 ---
 
 # CodeSight Workflow Skill
@@ -10,6 +10,7 @@ Activate this skill whenever:
    - Tip: If the project has a domain-specific architecture (e.g. Frontend vs Backend vs Worker/AI Pipeline), you may pass a tailored `architectureOverride` object to `codesight_map` (`zones` with `kind: "frontend" | "backend" | "shared" | "core"`) so CodeSight renders and caches a bespoke visual architecture map with zero extra API keys.
 2. You are about to modify a shared type, schema, or utility imported across multiple modules — run `codesight_trace` first to inspect all cross-file callers.
 3. A build/runtime error occurs or you finish a multi-file Vibe Coding edit — run `codesight_diagnose` (with `rawError` or `useGit: true`) to verify blast radius and ensure zero silent regressions (`REMOVED_GUARD`, `SWALLOWED_ERROR`, `TYPE_ESCAPE_HATCH`).
+4. The user wants to view or change CodeSight preferences (language `zh`/`en`, dashed flow lines, silent regression guard, architecture mode, optional BYOK LLM) — call `codesight_settings` (`action: "get" | "set" | "reset"`). Settings persist in `~/.codesight/config.json` and stay synced with the native macOS HUD.
 
 ## Output Guidelines for the User
 - Lead with a 1-sentence plain-language explanation of what role broke or shifted.

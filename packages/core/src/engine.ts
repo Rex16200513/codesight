@@ -1,3 +1,4 @@
+export * from './config.ts';
 export * from './astParser.ts';
 export * from './repoIndexer.ts';
 export * from './codeGraph.ts';

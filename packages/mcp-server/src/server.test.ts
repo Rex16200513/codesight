@@ -45,7 +45,13 @@ test('Stdio MCP Server handles initialize, tools/list, tools/call (trace & diagn
 
     const listed = await rpc('tools/list', {});
     const toolNames = ((listed.result as { tools: Array<{ name: string }> }).tools).map((t) => t.name);
-    assert.deepEqual(toolNames, ['codesight_map', 'codesight_ask', 'codesight_trace', 'codesight_diagnose']);
+    assert.deepEqual(toolNames, [
+      'codesight_map',
+      'codesight_ask',
+      'codesight_trace',
+      'codesight_diagnose',
+      'codesight_settings',
+    ]);
 
     const traceRes = await rpc('tools/call', {
       name: 'codesight_trace',
@@ -66,9 +72,17 @@ test('Stdio MCP Server handles initialize, tools/list, tools/call (trace & diagn
 
     const uiRead = await rpc('resources/read', { uri: 'ui://codesight/diagnose/latest' });
     const html = ((uiRead.result as { contents: Array<{ text: string }> }).contents)[0].text;
-    assert.match(html, /cs-columns/);
-    assert.match(html, /cs-modal-backdrop/);
+    assert.match(html, /cs-cols/);
+    assert.match(html, /cs-backdrop/);
+    assert.match(html, /cs-open-settings/);
     assert.match(html, /renderPrototypeSvg/);
+
+    const settingsRes = await rpc('tools/call', {
+      name: 'codesight_settings',
+      arguments: { action: 'get' },
+    });
+    const settingsText = ((settingsRes.result as { content: Array<{ text?: string }> }).content)[0].text ?? '';
+    assert.match(settingsText, /CodeSight Settings/);
   } finally {
     child.kill('SIGTERM');
   }

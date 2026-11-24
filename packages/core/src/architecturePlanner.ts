@@ -66,20 +66,26 @@ function isFrontendFile(f: IndexedFileNode): boolean {
   if (f.layer === 'ui-component' || f.ext === '.tsx' || f.ext === '.jsx' || f.ext === '.vue' || f.ext === '.svelte') {
     return true;
   }
+  if (f.ext === '.py' && f.externalDeps.some((d) => ['streamlit', 'gradio', 'nicegui', 'dash'].includes(d))) {
+    return true;
+  }
   return /(^|\/)(frontend|client|web|ui|hud|pages|components|views|hooks|stores?)\//i.test(p);
 }
 
 function isBackendFile(f: IndexedFileNode): boolean {
   const p = f.path.toLowerCase();
   if (f.layer === 'server-api') return true;
-  return /(^|\/)(backend|server|api|sidecar|mcp-server|routes|controllers|services|middleware|db|prisma|cli)\//i.test(p);
+  if (f.ext === '.py' && f.externalDeps.some((d) => ['fastapi', 'flask', 'django', 'starlette', 'uvicorn', 'aiohttp', 'tornado'].includes(d))) {
+    return true;
+  }
+  return /(^|\/)(backend|server|api|sidecar|mcp-server|routes|routers|controllers|services|middleware|db|prisma|cli)\//i.test(p);
 }
 
 function isSharedFoundationFile(f: IndexedFileNode, graph: CodeDependencyGraph): boolean {
   const p = f.path.toLowerCase();
   const m = graph.nodes[f.path];
-  if (/(schema|types?|contracts?|models?|constants?)\.[tj]s$/i.test(p)) return true;
-  if (/(^|\/)(shared|common|types|core)\//i.test(p) && (m?.totalDownstreamReach ?? 0) >= 3) return true;
+  if (/(schema|types?|contracts?|models?|constants?)\.(ts|js|py)$/i.test(p)) return true;
+  if (/(^|\/)(shared|common|types|core|models|schemas)\//i.test(p) && (m?.totalDownstreamReach ?? 0) >= 3) return true;
   return false;
 }
 

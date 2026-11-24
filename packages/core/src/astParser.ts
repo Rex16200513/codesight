@@ -311,15 +311,58 @@ function parseFallback(relPath: string, content: string): AstFileParseResult {
   const lines = content.split('\n');
 
   if (relPath.endsWith('.py')) {
+    const PY_IGNORED = new Set([
+      'print', 'len', 'str', 'int', 'float', 'bool', 'list', 'dict', 'set', 'tuple', 'range',
+      'enumerate', 'zip', 'isinstance', 'hasattr', 'getattr', 'setattr', 'super', 'open', 'type',
+      'min', 'max', 'sum', 'sorted', 'any', 'all', 'map', 'filter', 'format', 'append', 'extend',
+      'get', 'items', 'keys', 'values', 'update', 'strip', 'split', 'join', 'replace', 'lower', 'upper',
+    ]);
+
+    let currentSym: ParsedSymbol | null = null;
+    let currentIndent = -1;
+
     lines.forEach((line, idx) => {
-      const imp = line.match(/^\s*(?:from\s+([a-zA-Z0-9_.]+)\s+import|import\s+([a-zA-Z0-9_.]+))/);
-      if (imp) imports.add(imp[1] || imp[2]);
-      const fn = line.match(/^(?:async\s+)?def\s+([a-zA-Z0-9_]+)\s*\(/);
+      const trimmed = line.trim();
+      const indent = line.search(/\S/);
+
+      // Close active Python symbol scope when indentation returns to <= symbol indent
+      if (currentSym && trimmed && !trimmed.startsWith('#') && indent >= 0 && indent <= currentIndent) {
+        currentSym.endLine = idx;
+        currentSym = null;
+        currentIndent = -1;
+      }
+
+      // Imports: `from .foo.bar import a, b` or `import x.y as z, w`
+      const fromMatch = trimmed.match(/^from\s+(\.+[a-zA-Z0-9_.]*|[a-zA-Z0-9_.]+)\s+import\s+(.+)$/);
+      if (fromMatch) {
+        imports.add(fromMatch[1]);
+        // Also capture `from . import foo` -> `.foo`
+        if (/^\.+$/.test(fromMatch[1])) {
+          fromMatch[2]
+            .replace(/[()]/g, '')
+            .split(',')
+            .map((part) => part.trim().split(/\s+as\s+/)[0]?.trim())
+            .filter(Boolean)
+            .forEach((sub) => imports.add(`${fromMatch[1]}${sub}`));
+        }
+      } else {
+        const impMatch = trimmed.match(/^import\s+(.+)$/);
+        if (impMatch) {
+          impMatch[1]
+            .split(',')
+            .map((part) => part.trim().split(/\s+as\s+/)[0]?.trim())
+            .filter(Boolean)
+            .forEach((mod) => imports.add(mod));
+        }
+      }
+
+      const fn = line.match(/^(\s*)(?:async\s+)?def\s+([a-zA-Z0-9_]+)\s*\(/);
       if (fn) {
-        const name = fn[1];
-        const exported = !name.startsWith('_');
+        const fnIndent = fn[1].length;
+        const name = fn[2];
+        const exported = fnIndent === 0 && !name.startsWith('_');
         if (exported) exports.add(name);
-        symbols.push({
+        const sym: ParsedSymbol = {
           id: `${relPath}::${name}`,
           name,
           kind: 'function',
@@ -327,26 +370,53 @@ function parseFallback(relPath: string, content: string): AstFileParseResult {
           startLine: idx + 1,
           endLine: idx + 1,
           exported,
-          signature: line.trim().slice(0, 100),
+          signature: trimmed.slice(0, 100),
           calls: [],
-        });
+        };
+        symbols.push(sym);
+        if (fnIndent === 0) {
+          currentSym = sym;
+          currentIndent = fnIndent;
+        }
+        return;
       }
+
       const cls = line.match(/^class\s+([a-zA-Z0-9_]+)/);
       if (cls) {
-        exports.add(cls[1]);
-        symbols.push({
-          id: `${relPath}::${cls[1]}`,
-          name: cls[1],
+        const name = cls[1];
+        exports.add(name);
+        const sym: ParsedSymbol = {
+          id: `${relPath}::${name}`,
+          name,
           kind: 'class',
           file: relPath,
           startLine: idx + 1,
           endLine: idx + 1,
           exported: true,
-          signature: line.trim().slice(0, 100),
+          signature: trimmed.slice(0, 100),
           calls: [],
-        });
+        };
+        symbols.push(sym);
+        currentSym = sym;
+        currentIndent = 0;
+        return;
+      }
+
+      if (currentSym && trimmed && !trimmed.startsWith('#')) {
+        const callRe = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
+        let m: RegExpExecArray | null;
+        while ((m = callRe.exec(trimmed)) !== null) {
+          const callee = m[1];
+          if (!PY_IGNORED.has(callee) && callee !== currentSym.name && !currentSym.calls.includes(callee)) {
+            currentSym.calls.push(callee);
+          }
+        }
       }
     });
+
+    if (currentSym) {
+      (currentSym as ParsedSymbol).endLine = lines.length;
+    }
   } else if (relPath.endsWith('.go')) {
     lines.forEach((line, idx) => {
       const fn = line.match(/^func\s+(?:\([^)]+\)\s*)?([A-Za-z0-9_]+)\s*\(/);

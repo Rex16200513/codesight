@@ -10,11 +10,19 @@ import {
   askRepository,
   buildVisualProjectMap,
   generateRepoMap,
+  getGlobalConfigPath,
+  loadCodeSightConfig,
+  maskConfigForDisplay,
   projectProblemOntoRepo,
+  resetCodeSightConfig,
   resolveProjectArchitecture,
   safeGitDiff,
+  saveCodeSightConfig,
+  toActiveLLMConfig,
   traceSymbol,
+  type CodeSightConfigPatch,
 } from '@codesight/core/engine';
+import { renderVisualProjectMapHtml } from '@codesight/mcp-server';
 import { toMCPAppResource } from './mcpBridge.ts';
 
 export interface SidecarOptions {
@@ -75,6 +83,54 @@ export function startSidecarServer(options: SidecarOptions = {}) {
         schemaVersion: '2.0',
         connectedHudClients: sseClients.size,
       });
+      return;
+    }
+
+    // --- Live Browser Preview (Apple-crafted Visual Map + In-Card Settings) ---
+    if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/map')) {
+      try {
+        const dir = url.searchParams.get('repo') || process.cwd();
+        const cfg = loadCodeSightConfig(dir);
+        const { index, graph, callGraph } = await generateRepoMap(dir);
+        const llmConfig = cfg.architectureMode === 'heuristic' ? undefined : toActiveLLMConfig(cfg);
+        const blueprint = await resolveProjectArchitecture(index, graph, { llmConfig });
+        const visual = buildVisualProjectMap(index, graph, callGraph, undefined, blueprint);
+        const rawHtml = renderVisualProjectMapHtml(visual, cfg);
+        const pageHtml = rawHtml.replace(
+          '<body>',
+          '<body style="background:var(--cs-canvas,#f5f5f7);min-height:100vh;padding:24px;display:flex;justify-content:center;align-items:flex-start"><div style="width:min(960px,100%)">'
+        ).replace('</body>', '</div></body>');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(pageHtml);
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof Error ? err.message : 'Failed to render map' });
+      }
+      return;
+    }
+
+    // --- Unified Persistent Settings API (Shared by Agent Plugins, Browser Map & macOS HUD) ---
+    if (req.method === 'GET' && url.pathname === '/api/settings') {
+      const repoDir = url.searchParams.get('repo') || undefined;
+      const cfg = loadCodeSightConfig(repoDir);
+      sendJson(res, 200, {
+        configPath: getGlobalConfigPath(),
+        config: maskConfigForDisplay(cfg),
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/settings') {
+      try {
+        const body = JSON.parse((await readBody(req)) || '{}') as CodeSightConfigPatch & { reset?: boolean };
+        const next = body.reset ? resetCodeSightConfig() : saveCodeSightConfig(body);
+        sendJson(res, 200, {
+          ok: true,
+          configPath: getGlobalConfigPath(),
+          config: maskConfigForDisplay(next),
+        });
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : 'Invalid settings payload' });
+      }
       return;
     }
 

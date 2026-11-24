@@ -3,11 +3,19 @@ import Foundation
 import SwiftUI
 
 enum HUDTab: String, CaseIterable, Identifiable {
-    case map = "地图"
-    case ask = "问代码"
-    case diagnose = "排错"
+    case map = "map"
+    case ask = "ask"
+    case diagnose = "diagnose"
 
     var id: String { rawValue }
+
+    func title(english: Bool) -> String {
+        switch self {
+        case .map: return english ? "Map" : "地图"
+        case .ask: return english ? "Ask" : "问代码"
+        case .diagnose: return english ? "Diagnose" : "排错"
+        }
+    }
 
     var symbol: String {
         switch self {
@@ -20,8 +28,6 @@ enum HUDTab: String, CaseIterable, Identifiable {
 
 @MainActor
 final class HUDViewModel: ObservableObject {
-    private static let llmDefaultsKey = "codesight_byok_llm_v1"
-
     let bridge = EngineBridge()
 
     @Published var repoDir: String
@@ -32,9 +38,19 @@ final class HUDViewModel: ObservableObject {
     @Published var sidecarOnline: Bool = false
     @Published var errorMessage: String?
 
-    // BYOK LLM Config
-    @Published var llmConfig: BYOKLLMConfig {
-        didSet { saveLLMConfig() }
+    // Unified Settings (~/.codesight/config.json — synced with Agent MCP plugins & CLI)
+    @Published var config: UnifiedCodeSightConfig {
+        didSet {
+            saveUnifiedConfig()
+            onWindowSettingsChanged?(config.hud.alwaysOnTop, config.hud.opacity)
+        }
+    }
+
+    var isEnglish: Bool { config.language == "en" }
+
+    var llmConfig: BYOKLLMConfig {
+        get { config.llm }
+        set { config.llm = newValue }
     }
 
     // Map state
@@ -55,14 +71,21 @@ final class HUDViewModel: ObservableObject {
 
     var onCollapseChanged: ((Bool) -> Void)?
     var onCloseRequested: (() -> Void)?
+    var onWindowSettingsChanged: ((Bool, Double) -> Void)?
+
+    private static var configFileURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codesight", isDirectory: true)
+            .appendingPathComponent("config.json")
+    }
 
     init() {
         self.repoDir = bridge.defaultRepoRoot
-        if let data = UserDefaults.standard.data(forKey: Self.llmDefaultsKey),
-           let decoded = try? JSONDecoder().decode(BYOKLLMConfig.self, from: data) {
-            self.llmConfig = decoded
+        if let data = try? Data(contentsOf: Self.configFileURL),
+           let decoded = try? JSONDecoder().decode(UnifiedCodeSightConfig.self, from: data) {
+            self.config = decoded
         } else {
-            self.llmConfig = .default
+            self.config = .default
         }
 
         Task {
@@ -71,9 +94,20 @@ final class HUDViewModel: ObservableObject {
         }
     }
 
-    private func saveLLMConfig() {
-        if let data = try? JSONEncoder().encode(llmConfig) {
-            UserDefaults.standard.set(data, forKey: Self.llmDefaultsKey)
+    private func saveUnifiedConfig() {
+        let url = Self.configFileURL
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        if let data = try? encoder.encode(config) {
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    func openInteractiveBoardInBrowser() {
+        let encoded = repoDir.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let url = URL(string: "http://127.0.0.1:4317/?repo=\(encoded)") {
+            NSWorkspace.shared.open(url)
         }
     }
 
