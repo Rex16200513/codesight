@@ -5,3 +5,4 @@ export * from './graphProvider.ts';
 export * from './mcpGraphProvider.ts';
 export * from './embeddingIndex.ts';
 export * from './comprehensionEngine.ts';
+export * from './visualMap.ts';

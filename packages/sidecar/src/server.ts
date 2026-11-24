@@ -8,6 +8,7 @@ import {
 } from '@glassbox/core';
 import {
   askRepository,
+  buildVisualProjectMap,
   generateRepoMap,
   projectProblemOntoRepo,
   safeGitDiff,
@@ -98,6 +99,27 @@ export function startSidecarServer(options: SidecarOptions = {}) {
         sendJson(res, 200, map);
       } catch (err) {
         sendJson(res, 400, { error: err instanceof Error ? err.message : 'map failed' });
+      }
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/visual-map') {
+      try {
+        const body = JSON.parse((await readBody(req)) || '{}') as {
+          repoDir?: string;
+          rawError?: string;
+          useGit?: boolean;
+        };
+        const dir = body.repoDir || process.cwd();
+        const { index, graph, callGraph } = await generateRepoMap(dir);
+        let diagReport;
+        if (body.rawError || body.useGit) {
+          const rawDiff = body.useGit ? safeGitDiff(dir).diff : '';
+          diagReport = await projectProblemOntoRepo(dir, { rawError: body.rawError, rawDiff });
+        }
+        sendJson(res, 200, buildVisualProjectMap(index, graph, callGraph, diagReport));
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : 'visual-map failed' });
       }
       return;
     }

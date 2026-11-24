@@ -1,12 +1,13 @@
 import http from 'node:http';
 import {
   askRepository,
+  buildVisualProjectMap,
   generateRepoMap,
   projectProblemOntoRepo,
   safeGitDiff,
   traceSymbol,
 } from '@glassbox/core/engine';
-import { renderDiagnoseCardHtml, renderMapCardHtml, renderTraceCardHtml } from './uiCards.ts';
+import { renderTraceCardHtml, renderVisualProjectMapHtml } from './uiCards.ts';
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -228,9 +229,10 @@ export class CodeSightMcpHandler {
     const repoDir = typeof args.repoDir === 'string' && args.repoDir.trim() ? args.repoDir : process.cwd();
 
     if (toolName === 'codesight_map') {
-      const { map } = await generateRepoMap(repoDir);
+      const { map, index, graph, callGraph } = await generateRepoMap(repoDir);
+      const visualMap = buildVisualProjectMap(index, graph, callGraph);
       const uri = 'ui://codesight/map/latest';
-      const html = renderMapCardHtml(map);
+      const html = renderVisualProjectMapHtml(visualMap);
       this.uiResources.set(uri, { title: `CodeSight Map (${map.repoName})`, html });
 
       const textSummary = [
@@ -249,7 +251,7 @@ export class CodeSightMcpHandler {
             { type: 'text', text: textSummary },
             { type: 'resource', resource: { uri, mimeType: 'text/html+mcp', text: html } },
           ],
-          structuredContent: map,
+          structuredContent: { map, visualMap },
         },
       };
     }
@@ -311,10 +313,12 @@ export class CodeSightMcpHandler {
       const rawError = typeof args.rawError === 'string' ? args.rawError : '';
       const useGit = Boolean(args.useGit);
       const rawDiff = useGit ? safeGitDiff(repoDir).diff : '';
+      const { index, graph, callGraph } = await generateRepoMap(repoDir);
       const report = await projectProblemOntoRepo(repoDir, { rawError, rawDiff });
+      const visualMap = buildVisualProjectMap(index, graph, callGraph, report);
 
       const uri = 'ui://codesight/diagnose/latest';
-      const html = renderDiagnoseCardHtml(report);
+      const html = renderVisualProjectMapHtml(visualMap);
       this.uiResources.set(uri, { title: `CodeSight Diagnose (${report.repoName})`, html });
 
       const lines = [
