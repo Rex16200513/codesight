@@ -13,7 +13,7 @@
 <p align="center">
   <a href="./README.md">English</a> ·
   <strong>简体中文</strong> ·
-  <a href="./assets/codesight-promo.mp4">观看 1080p60 宣传视频</a> ·
+  <a href="https://github.com/Rex16200513/codesight/releases/download/v1.0.1/codesight-bilibili.mp4">观看 B 站中文配音宣传片</a> ·
   <a href="./CHANGELOG.md">更新日志</a>
 </p>
 
@@ -32,7 +32,7 @@
 </p>
 
 <p align="center">
-  <sub>1080p 60fps 完整高清宣传片：<a href="./assets/codesight-promo.mp4"><code>assets/codesight-promo.mp4</code></a></sub>
+  <sub>1080p 高清中文配音宣传片：<a href="https://github.com/Rex16200513/codesight/releases/download/v1.0.1/codesight-bilibili.mp4">从 GitHub Release v1.0.1 观看/下载</a></sub>
 </p>
 
 ---

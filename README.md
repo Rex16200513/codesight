@@ -13,7 +13,7 @@
 <p align="center">
   <strong>English</strong> ·
   <a href="./README.zh-CN.md">简体中文</a> ·
-  <a href="./assets/codesight-promo.mp4">Watch 1080p60 Promo Video</a> ·
+  <a href="https://github.com/Rex16200513/codesight/releases/download/v1.0.1/codesight-promo.mp4">Watch 1080p60 Promo Video</a> ·
   <a href="./CHANGELOG.md">Changelog</a>
 </p>
 
@@ -32,7 +32,7 @@ As AI agents edit across dozens of files, two failure modes appear repeatedly: *
 </p>
 
 <p align="center">
-  <sub>Full HD 1080p 60fps launch video: <a href="./assets/codesight-promo.mp4"><code>assets/codesight-promo.mp4</code></a></sub>
+  <sub>Full HD 1080p 60fps launch video: <a href="https://github.com/Rex16200513/codesight/releases/download/v1.0.1/codesight-promo.mp4">Download from GitHub Release v1.0.1</a></sub>
 </p>
 
 ---

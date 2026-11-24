@@ -7,9 +7,11 @@ build/
 *.tsbuildinfo
 
 # Local CodeSight incremental index cache & machine-specific installed plugin paths
-.glassbox/
 .codesight/
 .agents/
+
+# Large local marketing videos (hosted on GitHub Releases)
+media/
 
 # OS / Editor
 .DS_Store
