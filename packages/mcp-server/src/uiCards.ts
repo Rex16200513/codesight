@@ -11,10 +11,16 @@ function esc(str: string): string {
     .replace(/"/g, '&quot;');
 }
 
-const INTERACTIVE_MAP_CSS = `
+/**
+ * Single-Screen Master-Detail Architecture Cockpit:
+ * - Left: Compact Horizontal Swimlane Map (full filenames, zero truncation, fits in 1 screen)
+ * - Right: Pinned Contextual Action Card (updates immediately on node click, zero scrolling!)
+ * - SVG Flow: Draws ONLY clean 1-hop direct connections for the selected node across generous vertical gaps (zero spaghetti noodles!)
+ */
+const COCKPIT_CSS = `
   .cs-app {
     --cs-card: var(--card, #ffffff);
-    --cs-canvas: var(--muted, rgba(120, 118, 114, 0.06));
+    --cs-canvas: var(--muted, rgba(120, 118, 114, 0.055));
     --cs-ink: var(--foreground, #1c1917);
     --cs-muted: var(--muted-foreground, #6b6560);
     --cs-border: var(--border, rgba(28, 25, 23, 0.1));
@@ -34,9 +40,9 @@ const INTERACTIVE_MAP_CSS = `
     .cs-app {
       --cs-border-strong: rgba(255, 255, 255, 0.22);
       --cs-blue: #60a5fa;
-      --cs-blue-soft: rgba(96, 165, 250, 0.15);
+      --cs-blue-soft: rgba(96, 165, 250, 0.16);
       --cs-red: #f87171;
-      --cs-red-soft: rgba(248, 113, 113, 0.16);
+      --cs-red-soft: rgba(248, 113, 113, 0.17);
       --cs-amber: #fbbf24;
       --cs-amber-soft: rgba(251, 191, 36, 0.15);
       --cs-green: #34d399;
@@ -46,62 +52,60 @@ const INTERACTIVE_MAP_CSS = `
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    padding: 8px;
+    padding: 6px;
     font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif);
     background: var(--background, transparent);
     color: var(--foreground, #1c1917);
     -webkit-font-smoothing: antialiased;
   }
   .cs-app {
-    max-width: 860px;
+    max-width: 920px;
     background: var(--cs-card);
     border: 1px solid var(--cs-border);
     border-radius: 18px;
     overflow: hidden;
-    box-shadow: 0 6px 26px rgba(0, 0, 0, 0.06);
+    box-shadow: 0 6px 26px rgba(0, 0, 0, 0.05);
   }
 
-  /* Top Serene Header */
+  /* Compact Header */
   .cs-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 14px 18px;
+    gap: 10px;
+    padding: 12px 16px;
     border-bottom: 1px solid var(--cs-border);
     flex-wrap: wrap;
   }
   .cs-brand {
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: 8px;
   }
   .cs-logo {
-    width: 24px;
-    height: 24px;
-    border-radius: 7px;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
     background: var(--cs-blue-soft);
     color: var(--cs-blue);
     display: grid;
     place-items: center;
   }
   .cs-title {
-    font-size: 14px;
+    font-size: 13.5px;
     font-weight: 650;
-    letter-spacing: -0.01em;
     color: var(--cs-ink);
   }
-  .cs-subtitle {
-    font-size: 12px;
+  .cs-sub {
+    font-size: 11.5px;
     color: var(--cs-muted);
   }
   .cs-legend {
     display: flex;
     align-items: center;
-    gap: 12px;
-    font-size: 11.5px;
+    gap: 11px;
+    font-size: 11px;
     color: var(--cs-muted);
-    flex-wrap: wrap;
   }
   .cs-legend-item {
     display: inline-flex;
@@ -109,22 +113,37 @@ const INTERACTIVE_MAP_CSS = `
     gap: 5px;
   }
   .cs-dot {
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     display: inline-block;
+    flex-shrink: 0;
   }
 
-  /* Interactive Architecture Map Canvas */
-  .cs-canvas-wrap {
-    position: relative;
-    padding: 16px 18px 18px;
-    background: var(--cs-canvas);
-    overflow-x: auto;
+  /* Single-Screen Left-Right Cockpit Split */
+  .cs-cockpit {
+    display: grid;
+    grid-template-columns: minmax(0, 1.32fr) minmax(290px, 0.92fr);
+    align-items: stretch;
   }
-  .cs-canvas-stage {
+  @media (max-width: 680px) {
+    .cs-cockpit {
+      grid-template-columns: 1fr;
+    }
+    .cs-inspector {
+      border-left: none !important;
+      border-top: 1px solid var(--cs-border);
+    }
+  }
+
+  /* Left: Horizontal Layered Swimlane Map */
+  .cs-map-pane {
     position: relative;
-    min-width: 620px;
+    padding: 14px 16px 16px;
+    background: var(--cs-canvas);
+  }
+  .cs-stage {
+    position: relative;
   }
   .cs-edges-svg {
     position: absolute;
@@ -137,222 +156,218 @@ const INTERACTIVE_MAP_CSS = `
   }
   .cs-edge {
     fill: none;
-    stroke: var(--cs-muted);
-    stroke-width: 1.2;
-    opacity: 0.14;
-    transition: opacity 0.18s ease, stroke 0.18s ease, stroke-width 0.18s ease;
+    stroke-linecap: round;
+    transition: opacity 0.16s ease;
   }
-  .cs-edge.is-dim {
-    opacity: 0.04;
-  }
-  .cs-edge.is-upstream {
+  .cs-edge-up {
     stroke: var(--cs-blue);
-    stroke-width: 2;
+    stroke-width: 1.6;
+    opacity: 0.78;
+  }
+  .cs-edge-down {
+    stroke: var(--cs-amber);
+    stroke-width: 1.75;
     opacity: 0.85;
   }
-  .cs-edge.is-downstream {
-    stroke: var(--cs-amber);
-    stroke-width: 2;
-    opacity: 0.9;
-  }
-  .cs-edge.is-fault-path {
+  .cs-edge-fault {
     stroke: var(--cs-red);
-    stroke-width: 2.2;
-    opacity: 0.92;
+    stroke-width: 1.85;
+    opacity: 0.88;
   }
 
-  .cs-lanes {
+  .cs-rows {
     position: relative;
     z-index: 2;
-    display: grid;
-    grid-template-columns: repeat(var(--lane-count, 4), minmax(138px, 1fr));
-    gap: 14px;
-    align-items: start;
-  }
-  .cs-lane {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 24px; /* Generous horizontal gap so vertical curves breathe cleanly! */
   }
-  .cs-lane-head {
-    padding: 0 2px 4px;
+  .cs-row-block {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
   }
-  .cs-lane-title {
-    font-size: 12px;
-    font-weight: 650;
-    color: var(--cs-ink);
-  }
-  .cs-lane-sub {
-    font-size: 10.5px;
+  .cs-row-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    font-weight: 600;
     color: var(--cs-muted);
-    margin-top: 1px;
+    padding: 0 2px;
+  }
+  .cs-row-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    align-items: center;
   }
 
-  /* Individual Map Node Pill */
-  .cs-node {
+  /* Crisp Single-Line Auto-Width File Pills (ZERO truncated names!) */
+  .cs-chip {
     appearance: none;
-    width: 100%;
-    text-align: left;
-    padding: 9px 11px;
-    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 10px;
     border: 1px solid var(--cs-border);
     background: var(--cs-card);
     color: var(--cs-ink);
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 11.5px;
+    font-weight: 550;
     cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    transition: transform 0.15s ease, border-color 0.15s ease, opacity 0.18s ease, box-shadow 0.15s ease;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    transition: transform 0.14s ease, border-color 0.14s ease, opacity 0.16s ease, box-shadow 0.14s ease;
   }
-  .cs-node:hover {
+  .cs-chip:hover {
     transform: translateY(-1px);
     border-color: var(--cs-border-strong);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
   }
-  .cs-node.is-dim {
-    opacity: 0.28;
+  .cs-chip.is-dim {
+    opacity: 0.3;
   }
-  .cs-node.is-selected {
+  .cs-chip.is-selected {
     border-color: var(--cs-blue);
-    box-shadow: 0 0 0 2.5px var(--cs-blue-soft);
+    background: var(--cs-blue-soft);
+    box-shadow: 0 0 0 2px var(--cs-blue-soft);
     opacity: 1;
+    font-weight: 650;
   }
-  .cs-node.is-fault {
+  .cs-chip.is-fault {
     border-color: var(--cs-red);
     background: var(--cs-red-soft);
-    box-shadow: 0 0 0 2.5px var(--cs-red-soft);
+    box-shadow: 0 0 0 2px var(--cs-red-soft);
     opacity: 1;
+    font-weight: 650;
   }
-  .cs-node.is-upstream {
+  .cs-chip.is-upstream {
     border-color: var(--cs-blue);
     background: var(--cs-blue-soft);
     opacity: 1;
   }
-  .cs-node.is-downstream {
+  .cs-chip.is-direct-down {
     border-color: var(--cs-amber);
     background: var(--cs-amber-soft);
     opacity: 1;
   }
-  .cs-node-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 5px;
+  .cs-chip.is-indirect-down {
+    border-style: dashed;
+    border-color: rgba(217, 119, 6, 0.45);
+    background: var(--cs-card);
+    opacity: 0.82;
   }
-  .cs-node-name {
-    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-    font-size: 11.5px;
-    font-weight: 600;
-    color: var(--cs-ink);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .cs-node-reach {
+  .cs-chip-tag {
+    font-family: var(--font-sans, -apple-system, sans-serif);
     font-size: 10px;
     font-weight: 600;
-    padding: 1px 6px;
+    padding: 1px 5px;
     border-radius: 999px;
     background: var(--cs-amber-soft);
     color: var(--cs-amber);
-    flex-shrink: 0;
   }
-  .cs-node.is-fault .cs-node-reach {
+  .cs-chip.is-fault .cs-chip-tag {
     background: var(--cs-red);
     color: #fff;
   }
-  .cs-node-role {
-    font-size: 11px;
+  .cs-more-btn {
+    appearance: none;
+    border: 1px dashed var(--cs-border-strong);
+    background: transparent;
     color: var(--cs-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 11px;
+    padding: 5px 9px;
+    border-radius: 9px;
+    cursor: pointer;
+  }
+  .cs-more-btn:hover {
+    color: var(--cs-ink);
   }
 
-  /* Contextual Action Card (Directly Below the Map — Updates Instantly on Node Click!) */
-  .cs-action-card {
-    border-top: 1px solid var(--cs-border);
-    padding: 18px 20px;
+  /* Right: Pinned Contextual Inspector / Action Card (Always Visible!) */
+  .cs-inspector {
+    border-left: 1px solid var(--cs-border);
+    padding: 16px 18px;
     background: var(--cs-card);
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
   }
-  .cs-card-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
-  .cs-card-kicker {
-    font-size: 11.5px;
-    color: var(--cs-muted);
+  .cs-ins-kicker {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-bottom: 4px;
-  }
-  .cs-card-title {
-    margin: 0;
-    font-size: 15.5px;
-    font-weight: 650;
-    line-height: 1.45;
-    color: var(--cs-ink);
-  }
-  .cs-card-desc {
-    margin: 4px 0 0;
-    font-size: 13px;
-    line-height: 1.6;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
     color: var(--cs-muted);
   }
   .cs-pill {
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 600;
-    padding: 3px 10px;
+    padding: 2px 8px;
     border-radius: 999px;
     white-space: nowrap;
   }
-  .cs-impact-strip {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    flex-wrap: wrap;
-    padding: 10px 13px;
-    border-radius: 12px;
+  .cs-ins-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 650;
+    line-height: 1.42;
+    color: var(--cs-ink);
+  }
+  .cs-ins-desc {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.58;
+    color: var(--cs-muted);
+  }
+  .cs-rel-box {
+    padding: 10px 12px;
+    border-radius: 11px;
     background: var(--cs-canvas);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
     font-size: 12px;
     color: var(--cs-ink);
   }
-  .cs-impact-kv {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
+  .cs-rel-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .cs-rel-key {
+    color: var(--cs-muted);
+    flex-shrink: 0;
+    font-size: 11.5px;
+  }
+  .cs-rel-val {
+    font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+    font-size: 11.5px;
+    font-weight: 500;
+    word-break: break-word;
   }
   .cs-warn-box {
-    padding: 10px 13px;
-    border-radius: 11px;
+    padding: 9px 11px;
+    border-radius: 10px;
     background: var(--cs-amber-soft);
-    border: 1px solid rgba(217, 119, 6, 0.25);
-    font-size: 12px;
-    line-height: 1.55;
+    border: 1px solid rgba(217, 119, 6, 0.24);
+    font-size: 11.5px;
+    line-height: 1.5;
     color: var(--cs-ink);
   }
   .cs-choices {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 9px;
-  }
-  @media (max-width: 560px) {
-    .cs-choices { grid-template-columns: 1fr; }
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
   }
   .cs-choice {
     display: flex;
     align-items: flex-start;
-    gap: 9px;
-    padding: 11px 13px;
-    border-radius: 12px;
+    gap: 8px;
+    padding: 9px 11px;
+    border-radius: 11px;
     border: 1px solid var(--cs-border);
     background: var(--cs-card);
     cursor: pointer;
@@ -363,191 +378,226 @@ const INTERACTIVE_MAP_CSS = `
     background: var(--cs-blue-soft);
   }
   .cs-choice input {
-    margin-top: 3px;
+    margin-top: 2px;
     accent-color: var(--cs-blue);
   }
   .cs-choice-title {
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--cs-ink);
-    line-height: 1.4;
+    line-height: 1.38;
   }
   .cs-choice-sub {
-    font-size: 11.5px;
+    font-size: 11px;
     color: var(--cs-muted);
-    margin-top: 3px;
-    line-height: 1.45;
+    margin-top: 2px;
+    line-height: 1.42;
   }
-  .cs-cta-row {
+  .cs-cta-col {
+    margin-top: auto;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 6px;
   }
   .cs-btn {
     appearance: none;
     border: none;
-    border-radius: 11px;
-    padding: 10px 18px;
+    border-radius: 10px;
+    padding: 10px 14px;
+    width: 100%;
     background: var(--cs-accent);
     color: var(--cs-accent-fg);
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 600;
     cursor: pointer;
-    flex: 1;
-    min-width: 180px;
     transition: opacity 0.15s ease;
   }
   .cs-btn:hover { opacity: 0.9; }
-  .cs-btn-ghost {
+  .cs-btn-link {
     appearance: none;
-    border: 1px solid var(--cs-border);
-    border-radius: 11px;
-    padding: 10px 14px;
+    border: none;
     background: transparent;
-    color: var(--cs-muted);
-    font-size: 12px;
+    color: var(--cs-blue);
+    font-size: 11.5px;
     font-weight: 500;
     cursor: pointer;
+    padding: 2px 0;
+    align-self: center;
   }
-  .cs-btn-ghost:hover { color: var(--cs-ink); border-color: var(--cs-border-strong); }
 `;
 
-const LOGO_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="3.5" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2.2" fill="currentColor"/></svg>`;
+const LOGO_SVG = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="3.5" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2.2" fill="currentColor"/></svg>`;
 
 /**
- * Unified Live Interactive Architecture Map + Contextual Action Card HTML Renderer.
- * Serves BOTH Project Overview (`codesight_map`) AND Error/Diff Projection (`codesight_diagnose`):
- * - Every file is an interactive node arranged in clean architectural lanes
- * - Curved SVG dependency edges light up on click/hover (upstream = blue, downstream = amber/red, safe files dim)
- * - Clicking any node immediately updates the Contextual Action Card below with plain-Chinese role, impact, and 1-click AI adjustment prompts!
+ * Single-Screen Architecture Cockpit Renderer:
+ * Left = Horizontal Layered Swimlane Map (compact, zero truncation, ONLY direct 1-hop curves!)
+ * Right = Pinned Contextual Action Card (updates immediately beside the map with zero scrolling!)
  */
 export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): string {
   const safeJson = JSON.stringify(payload).replace(/</g, '\\u003c');
   const isDiag = Boolean(payload.activeDiagnosis);
 
-  const lanesHtml = payload.lanes
-    .map((lane) => {
-      const nodesHtml = lane.nodeIds
-        .map((id) => {
-          const n = payload.nodes.find((item) => item.id === id);
-          if (!n) return '';
-          const reachBadge =
-            n.status === 'fault'
-              ? '<span class="cs-node-reach">报错</span>'
-              : n.downstreamReach >= 3
-              ? `<span class="cs-node-reach">${n.downstreamReach}处用</span>`
-              : '';
-          return `
-            <button type="button" class="cs-node" data-node-id="${esc(n.id)}" title="${esc(n.path)}">
-              <div class="cs-node-top">
-                <span class="cs-node-name">${esc(n.name)}</span>
-                ${reachBadge}
-              </div>
-              <div class="cs-node-role">${esc(n.roleLabel)}</div>
-            </button>`;
-        })
-        .join('');
-
-      return `
-        <div class="cs-lane" data-lane="${esc(lane.id)}">
-          <div class="cs-lane-head">
-            <div class="cs-lane-title">${esc(lane.title)}</div>
-            <div class="cs-lane-sub">${esc(lane.subtitle)}</div>
-          </div>
-          ${nodesHtml}
-        </div>`;
-    })
-    .join('');
-
   const script = `
     const DATA = ${safeJson};
     const nodeMap = new Map(DATA.nodes.map(n => [n.id, n]));
+    const rowsEl = document.getElementById('cs-rows');
     const stageEl = document.getElementById('cs-stage');
     const svgEl = document.getElementById('cs-svg');
-    const cardEl = document.getElementById('cs-action-card');
-    const nodeEls = new Map();
-    document.querySelectorAll('.cs-node').forEach(el => nodeEls.set(el.dataset.nodeId, el));
+    const inspectorEl = document.getElementById('cs-inspector');
 
+    const MAX_PER_ROW = 5;
+    const expandedLanes = new Set();
     let selectedId = DATA.activeDiagnosis?.targetNodeId || (DATA.nodes.find(n => n.isHub)?.id ?? DATA.nodes[0]?.id);
     let mode = DATA.activeDiagnosis ? 'diagnosis' : 'explore';
 
-    function drawEdges() {
-      const stageRect = stageEl.getBoundingClientRect();
-      svgEl.setAttribute('viewBox', '0 0 ' + stageRect.width + ' ' + stageRect.height);
-      const sel = nodeMap.get(selectedId);
-      const upSet = new Set(sel ? sel.upstreamPaths : []);
-      const downSet = new Set(sel ? sel.allDownstreamPaths : []);
-      const isFaultMode = mode === 'diagnosis' && DATA.activeDiagnosis?.targetNodeId === selectedId;
-
-      const paths = [];
-      for (const e of DATA.edges) {
-        const fromEl = nodeEls.get(e.from);
-        const toEl = nodeEls.get(e.to);
-        if (!fromEl || !toEl) continue;
-        const r1 = fromEl.getBoundingClientRect();
-        const r2 = toEl.getBoundingClientRect();
-
-        const x1 = r1.right - stageRect.left;
-        const y1 = r1.top + r1.height / 2 - stageRect.top;
-        const x2 = r2.left - stageRect.left;
-        const y2 = r2.top + r2.height / 2 - stageRect.top;
-        const sameCol = Math.abs(r1.left - r2.left) < 20;
-
-        let d;
-        if (sameCol) {
-          const sx = r1.right - stageRect.left;
-          const tx = r2.right - stageRect.left;
-          const curveX = Math.max(sx, tx) + 18;
-          d = 'M ' + sx + ' ' + y1 + ' C ' + curveX + ' ' + y1 + ', ' + curveX + ' ' + y2 + ', ' + tx + ' ' + y2;
-        } else {
-          const startX = r1.left < r2.left ? x1 : r1.left - stageRect.left;
-          const endX = r1.left < r2.left ? x2 : r2.right - stageRect.left;
-          const dx = Math.max(24, Math.abs(endX - startX) * 0.45);
-          const c1x = r1.left < r2.left ? startX + dx : startX - dx;
-          const c2x = r1.left < r2.left ? endX - dx : endX + dx;
-          d = 'M ' + startX + ' ' + y1 + ' C ' + c1x + ' ' + y1 + ', ' + c2x + ' ' + y2 + ', ' + endX + ' ' + y2;
-        }
-
-        let cls = 'cs-edge';
-        if (selectedId) {
-          if (e.from === selectedId && upSet.has(e.to)) {
-            cls += ' is-upstream';
-          } else if (e.to === selectedId || (downSet.has(e.from) && (e.to === selectedId || downSet.has(e.to)))) {
-            cls += isFaultMode ? ' is-fault-path' : ' is-downstream';
-          } else {
-            cls += ' is-dim';
-          }
-        }
-        paths.push('<path class="' + cls + '" d="' + d + '" />');
-      }
-      svgEl.innerHTML = paths.join('');
+    function escHtml(s) {
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
-    function updateNodeHighlights() {
+    function renderMapRows() {
       const sel = nodeMap.get(selectedId);
       const upSet = new Set(sel ? sel.upstreamPaths : []);
-      const downSet = new Set(sel ? sel.allDownstreamPaths : []);
-      const isFaultTarget = mode === 'diagnosis' && DATA.activeDiagnosis?.targetNodeId === selectedId;
+      const directDownSet = new Set(sel ? sel.directDownstreamPaths : []);
+      const allDownSet = new Set(sel ? sel.allDownstreamPaths : []);
+      const isFaultSelected = mode === 'diagnosis' && DATA.activeDiagnosis?.targetNodeId === selectedId;
 
-      nodeEls.forEach((el, id) => {
-        el.classList.remove('is-selected', 'is-fault', 'is-upstream', 'is-downstream', 'is-dim');
-        if (!selectedId) return;
-        if (id === selectedId) {
-          el.classList.add(isFaultTarget ? 'is-fault' : 'is-selected');
-        } else if (upSet.has(id)) {
-          el.classList.add('is-upstream');
-        } else if (downSet.has(id)) {
-          el.classList.add('is-downstream');
-        } else {
-          el.classList.add('is-dim');
-        }
+      rowsEl.innerHTML = DATA.lanes.map(lane => {
+        const isExpanded = expandedLanes.has(lane.id);
+        // Always ensure selected/fault/direct-connected nodes stay visible in compact row
+        const orderedIds = [...lane.nodeIds].sort((a, b) => {
+          const score = (id) =>
+            id === selectedId ? 4 :
+            id === DATA.activeDiagnosis?.targetNodeId ? 3 :
+            (upSet.has(id) || directDownSet.has(id)) ? 2 : 0;
+          return score(b) - score(a);
+        });
+        const visibleIds = isExpanded ? orderedIds : orderedIds.slice(0, MAX_PER_ROW);
+        const hiddenCount = orderedIds.length - visibleIds.length;
+
+        const chips = visibleIds.map(id => {
+          const n = nodeMap.get(id);
+          if (!n) return '';
+          const cls = ['cs-chip'];
+          if (id === selectedId) {
+            cls.push(isFaultSelected ? 'is-fault' : 'is-selected');
+          } else if (upSet.has(id)) {
+            cls.push('is-upstream');
+          } else if (directDownSet.has(id)) {
+            cls.push('is-direct-down');
+          } else if (allDownSet.has(id)) {
+            cls.push('is-indirect-down');
+          } else {
+            cls.push('is-dim');
+          }
+
+          const tag = id === DATA.activeDiagnosis?.targetNodeId
+            ? '<span class="cs-chip-tag">报错</span>'
+            : n.downstreamReach >= 5
+            ? '<span class="cs-chip-tag">' + n.downstreamReach + '处用</span>'
+            : '';
+
+          return '<button type="button" class="' + cls.join(' ') + '" data-node-id="' + escHtml(n.id) + '" title="' + escHtml(n.path + ' · ' + n.roleLabel) + '">' +
+            '<span>' + escHtml(n.name) + '</span>' + tag +
+          '</button>';
+        }).join('');
+
+        const moreBtn = hiddenCount > 0
+          ? '<button type="button" class="cs-more-btn" data-expand-lane="' + escHtml(lane.id) + '">+' + hiddenCount + ' 更多</button>'
+          : (isExpanded && orderedIds.length > MAX_PER_ROW
+              ? '<button type="button" class="cs-more-btn" data-expand-lane="' + escHtml(lane.id) + '">收起</button>'
+              : '');
+
+        return '<div class="cs-row-block">' +
+          '<div class="cs-row-label"><span>' + escHtml(lane.title) + '</span><span style="font-weight:400">' + escHtml(lane.subtitle) + '</span></div>' +
+          '<div class="cs-row-chips">' + chips + moreBtn + '</div>' +
+        '</div>';
+      }).join('');
+
+      rowsEl.querySelectorAll('.cs-chip').forEach(btn => {
+        btn.addEventListener('click', () => selectNode(btn.dataset.nodeId));
+      });
+      rowsEl.querySelectorAll('.cs-more-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const lid = btn.dataset.expandLane;
+          if (expandedLanes.has(lid)) expandedLanes.delete(lid);
+          else expandedLanes.add(lid);
+          renderAll();
+        });
       });
     }
 
-    function escHtml(s) {
-      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    /**
+     * Draw ONLY clean direct 1-hop curves connected to selectedId!
+     * Zero tangled spaghetti bundles: indirect nodes are communicated cleanly via dashed chip styling.
+     */
+    function drawCleanDirectEdges() {
+      const stageRect = stageEl.getBoundingClientRect();
+      svgEl.setAttribute('viewBox', '0 0 ' + stageRect.width + ' ' + stageRect.height);
+
+      const chipEls = new Map();
+      rowsEl.querySelectorAll('.cs-chip').forEach(el => chipEls.set(el.dataset.nodeId, el));
+
+      const selEl = chipEls.get(selectedId);
+      const selNode = nodeMap.get(selectedId);
+      if (!selEl || !selNode) {
+        svgEl.innerHTML = '';
+        return;
+      }
+
+      const defs =
+        '<defs>' +
+          '<marker id="arr-blue" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M1 1.5 L6.5 4 L1 6.5" fill="none" stroke="var(--cs-blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>' +
+          '<marker id="arr-amber" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M1 1.5 L6.5 4 L1 6.5" fill="none" stroke="var(--cs-amber)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>' +
+          '<marker id="arr-red" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M1 1.5 L6.5 4 L1 6.5" fill="none" stroke="var(--cs-red)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>' +
+        '</defs>';
+
+      const isFaultMode = mode === 'diagnosis' && DATA.activeDiagnosis?.targetNodeId === selectedId;
+      const selRect = selEl.getBoundingClientRect();
+      const paths = [];
+
+      function connect(fromRect, toRect, cls, markerId, offsetIndex) {
+        const sameRow = Math.abs(fromRect.top - toRect.top) < 16;
+        if (sameRow) {
+          // Gentle short arc above the chips in the same row
+          const x1 = fromRect.left + fromRect.width / 2 - stageRect.left;
+          const x2 = toRect.left + toRect.width / 2 - stageRect.left;
+          const y = fromRect.top - stageRect.top;
+          const lift = 12 + (offsetIndex % 3) * 4;
+          const d = 'M ' + x1 + ' ' + y + ' Q ' + ((x1 + x2) / 2) + ' ' + (y - lift) + ' ' + x2 + ' ' + y;
+          paths.push('<path class="cs-edge ' + cls + '" d="' + d + '" marker-end="url(#' + markerId + ')" />');
+          return;
+        }
+        const goingDown = fromRect.top < toRect.top;
+        const x1 = fromRect.left + fromRect.width / 2 - stageRect.left + ((offsetIndex % 3) - 1) * 5;
+        const y1 = (goingDown ? fromRect.bottom : fromRect.top) - stageRect.top;
+        const x2 = toRect.left + toRect.width / 2 - stageRect.left;
+        const y2 = (goingDown ? toRect.top : toRect.bottom) - stageRect.top;
+        const midY = (y1 + y2) / 2;
+        const d = 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + midY + ', ' + x2 + ' ' + midY + ', ' + x2 + ' ' + y2;
+        paths.push('<path class="cs-edge ' + cls + '" d="' + d + '" marker-end="url(#' + markerId + ')" />');
+      }
+
+      // 1. Direct upstream dependencies (blue: selected -> dependency)
+      selNode.upstreamPaths.slice(0, 6).forEach((upId, idx) => {
+        const upEl = chipEls.get(upId);
+        if (!upEl) return;
+        connect(selRect, upEl.getBoundingClientRect(), 'cs-edge-up', 'arr-blue', idx);
+      });
+
+      // 2. Direct downstream dependents (amber/red: selected -> caller)
+      selNode.directDownstreamPaths.slice(0, 6).forEach((downId, idx) => {
+        const downEl = chipEls.get(downId);
+        if (!downEl) return;
+        connect(
+          selRect,
+          downEl.getBoundingClientRect(),
+          isFaultMode ? 'cs-edge-fault' : 'cs-edge-down',
+          isFaultMode ? 'arr-red' : 'arr-amber',
+          idx
+        );
+      });
+
+      svgEl.innerHTML = defs + paths.join('');
     }
 
     function buildExploreDirections(node) {
@@ -556,35 +606,35 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
         return [
           {
             id: 'adj-safe',
-            label: '只调整内部实现，不破坏其他文件',
-            strategy: '保持 ' + node.name + ' 对外输入输出不变，避免牵连用到它的 ' + impactCount + ' 个文件。',
-            surgicalPrompt: '[CodeSight Adjustment: Safe Internal Change]\\nModify \`' + node.path + '\` while strictly keeping its exported interface and behavior backward-compatible so none of its ' + impactCount + ' dependent files break.'
+            label: '只改内部实现，不影响别的文件',
+            strategy: '保持 ' + node.name + ' 原有输入输出不变，避免波及用到它的 ' + impactCount + ' 个文件。',
+            surgicalPrompt: '[CodeSight Fix Plan: Safe Internal Edit]\\nModify \`' + node.path + '\` while keeping its exported signature and behavior backward-compatible so none of its ' + impactCount + ' dependent files break.'
           },
           {
             id: 'adj-refactor',
-            label: '连同依赖它的 ' + impactCount + ' 个文件一起调整',
-            strategy: '如果需要改数据结构或函数签名，让 AI 顺着地图把相关文件同步改齐。',
-            surgicalPrompt: '[CodeSight Adjustment: Coordinated Update]\\nUpdate \`' + node.path + '\` AND synchronously update all ' + impactCount + ' dependent files (' + node.allDownstreamPaths.slice(0, 5).join(', ') + '). Run typecheck & tests to verify.'
+            label: '连同相关 ' + impactCount + ' 个文件一起改',
+            strategy: '如果要改数据结构或参数，让 AI 按依赖关系同步改齐全部关联文件。',
+            surgicalPrompt: '[CodeSight Fix Plan: Coordinated Update]\\nUpdate \`' + node.path + '\` AND synchronously update all ' + impactCount + ' dependent files (' + node.allDownstreamPaths.slice(0, 5).join(', ') + '). Run typecheck & tests.'
           }
         ];
       }
       return [
         {
           id: 'adj-leaf',
-          label: '放心直接调整 ' + node.name + '（影响极小）',
-          strategy: impactCount === 0 ? '没有其他文件依赖它，直接在这里改功能或修样式很安全。' : '只影响 ' + impactCount + ' 个直接关联文件，改动可控。',
-          surgicalPrompt: '[CodeSight Adjustment: Scoped Edit]\\nUpdate \`' + node.path + '\` cleanly. Keep changes minimal and verify ' + (impactCount > 0 ? node.directDownstreamPaths.join(', ') : 'local tests/build') + '.'
+          label: '放心直接改 ' + node.name,
+          strategy: impactCount === 0 ? '没有别的文件依赖它，可以直接调整功能或修问题。' : '只关联 ' + impactCount + ' 个文件，改动可控。',
+          surgicalPrompt: '[CodeSight Fix Plan: Scoped Edit]\\nUpdate \`' + node.path + '\` cleanly. Keep changes minimal and verify ' + (impactCount > 0 ? node.directDownstreamPaths.join(', ') : 'build & tests') + '.'
         },
         {
           id: 'adj-explain',
-          label: '让 AI 结合上下游详细讲讲这段代码',
-          strategy: '只把这 1 个文件和它的直接关联发给 AI，不浪费 Token 就能听懂来龙去脉。',
-          surgicalPrompt: '[CodeSight Explain]\\nExplain how \`' + node.path + '\` works in plain language, focusing on how it uses (' + (node.upstreamPaths.join(', ') || 'none') + ') and serves (' + (node.directDownstreamPaths.join(', ') || 'top-level entry') + ').'
+          label: '让 AI 结合上下游讲讲这段代码',
+          strategy: '只发这个文件与直接关联文件，低 Token 听懂来龙去脉。',
+          surgicalPrompt: '[CodeSight Explain]\\nExplain how \`' + node.path + '\` works in plain Chinese, including how it uses (' + (node.upstreamPaths.join(', ') || 'none') + ') and serves (' + (node.directDownstreamPaths.join(', ') || 'top-level entry') + ').'
         }
       ];
     }
 
-    function renderActionCard() {
+    function renderInspector() {
       const node = nodeMap.get(selectedId);
       if (!node) return;
       const isFaultView = mode === 'diagnosis' && DATA.activeDiagnosis && DATA.activeDiagnosis.targetNodeId === node.id;
@@ -597,45 +647,43 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
         ? 'color:var(--cs-amber);background:var(--cs-amber-soft)'
         : 'color:var(--cs-green);background:var(--cs-green-soft)';
 
-      const badgeLabel = isFaultView
-        ? '报错位置 · 关联 ' + impactCount + ' 个文件'
+      const badgeText = isFaultView
+        ? '报错点 · 关联 ' + impactCount + ' 文件'
         : impactCount >= 3
-        ? '基础文件 · 被 ' + impactCount + ' 处用到'
+        ? '基础文件 · ' + impactCount + ' 处用到'
         : impactCount > 0
         ? '关联 ' + impactCount + ' 个文件'
-        : '独立文件 · 放心修改';
+        : '独立文件 · 放心改';
 
-      const title = isFaultView ? DATA.activeDiagnosis.headline : node.name + ' — ' + node.roleLabel;
-      const desc = isFaultView ? DATA.activeDiagnosis.subtext : node.summary;
+      const title = isFaultView ? DATA.activeDiagnosis.headline : node.name;
+      const desc = isFaultView
+        ? (DATA.activeDiagnosis.subtext || node.summary)
+        : (node.roleLabel + '：' + node.summary);
       const dirs = isFaultView ? DATA.activeDiagnosis.directions : buildExploreDirections(node);
       const warns = isFaultView ? (DATA.activeDiagnosis.silentRegressions || []) : [];
 
-      const callerText = node.callers.length > 0
-        ? node.callers.slice(0, 2).map(c => c.callerName + ' (' + c.callerFile.split('/').pop() + ':' + c.callerLine + ')').join('、')
-        : (node.directDownstreamPaths.slice(0, 2).map(p => p.split('/').pop()).join('、') || '无');
+      const upStr = node.upstreamPaths.slice(0, 3).map(p => p.split('/').pop()).join('、') || '无';
+      const downStr = node.callers.length > 0
+        ? node.callers.slice(0, 2).map(c => c.callerFile.split('/').pop() + ':' + c.callerLine).join('、')
+        : (node.directDownstreamPaths.slice(0, 3).map(p => p.split('/').pop()).join('、') || '无');
+      const indirectExtra = Math.max(0, impactCount - node.directDownstreamPaths.length);
 
-      const upstreamText = node.upstreamPaths.slice(0, 2).map(p => p.split('/').pop()).join('、') || '无';
-
-      cardEl.innerHTML =
-        '<div class="cs-card-head">' +
-          '<div>' +
-            '<div class="cs-card-kicker">' +
-              '<span>' + (isFaultView ? '当前报错处理卡' : '文件透视与调整卡') + '</span>' +
-              '<span>·</span>' +
-              '<span style="font-family:var(--font-mono,monospace)">' + escHtml(node.path) + (isFaultView && DATA.activeDiagnosis.targetLine ? ':' + DATA.activeDiagnosis.targetLine : '') + '</span>' +
-            '</div>' +
-            '<h3 class="cs-card-title">' + escHtml(title) + '</h3>' +
-            (desc ? '<p class="cs-card-desc">' + escHtml(desc) + '</p>' : '') +
-          '</div>' +
-          '<span class="cs-pill" style="' + badgeStyle + '">' + escHtml(badgeLabel) + '</span>' +
+      inspectorEl.innerHTML =
+        '<div class="cs-ins-kicker">' +
+          '<span>' + (isFaultView ? '报错处理卡' : '文件透视卡') + '</span>' +
+          '<span class="cs-pill" style="' + badgeStyle + '">' + escHtml(badgeText) + '</span>' +
         '</div>' +
-        '<div class="cs-impact-strip">' +
-          '<span class="cs-impact-kv"><span class="cs-dot" style="background:var(--cs-blue)"></span>用到：<strong>' + escHtml(upstreamText) + '</strong></span>' +
-          '<span class="cs-impact-kv"><span class="cs-dot" style="background:var(--cs-amber)"></span>影响：<strong>' + escHtml(callerText) + '</strong></span>' +
-          '<span class="cs-impact-kv" style="color:var(--cs-green)"><span class="cs-dot" style="background:var(--cs-green)"></span>其余 ' + safeCount + ' 个文件不受影响</span>' +
+        '<div>' +
+          '<h3 class="cs-ins-title">' + escHtml(title) + '</h3>' +
+          '<p class="cs-ins-desc" style="margin-top:5px">' + escHtml(desc) + '</p>' +
+        '</div>' +
+        '<div class="cs-rel-box">' +
+          '<div class="cs-rel-row"><span class="cs-dot" style="background:var(--cs-blue);margin-top:4px"></span><span class="cs-rel-key">用到：</span><span class="cs-rel-val">' + escHtml(upStr) + '</span></div>' +
+          '<div class="cs-rel-row"><span class="cs-dot" style="background:var(--cs-amber);margin-top:4px"></span><span class="cs-rel-key">影响：</span><span class="cs-rel-val">' + escHtml(downStr) + (indirectExtra > 0 ? ' 等 ' + impactCount + ' 个' : '') + '</span></div>' +
+          '<div class="cs-rel-row"><span class="cs-dot" style="background:var(--cs-green);margin-top:4px"></span><span style="color:var(--cs-green);font-weight:500">其余 ' + safeCount + ' 个文件不受影响</span></div>' +
         '</div>' +
         (warns.length > 0
-          ? '<div class="cs-warn-box"><strong>发现 ' + warns.length + ' 处隐蔽隐患：</strong>' + warns.map(w => escHtml(w.title)).join('；') + '</div>'
+          ? '<div class="cs-warn-box"><strong>隐蔽隐患：</strong>' + warns.map(w => escHtml(w.title)).join('；') + '</div>'
           : '') +
         '<div class="cs-choices">' +
           dirs.map((d, idx) =>
@@ -648,17 +696,17 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
             '</label>'
           ).join('') +
         '</div>' +
-        '<div class="cs-cta-row">' +
+        '<div class="cs-cta-col">' +
           '<button type="button" class="cs-btn" id="cs-copy-btn">' + (isFaultView ? '复制修改指令给 AI' : '复制调整指令给 AI') + '</button>' +
           (DATA.activeDiagnosis && !isFaultView
-            ? '<button type="button" class="cs-btn-ghost" id="cs-back-fault">回到报错文件</button>'
-            : '<span class="cs-subtitle">点击上方任意文件，实时切换关联路线与操作卡</span>') +
+            ? '<button type="button" class="cs-btn-link" id="cs-back-fault">回到报错文件</button>'
+            : '') +
         '</div>';
 
       const copyBtn = document.getElementById('cs-copy-btn');
       if (copyBtn) {
         copyBtn.addEventListener('click', async () => {
-          const checked = cardEl.querySelector('input[name="cs_action"]:checked');
+          const checked = inspectorEl.querySelector('input[name="cs_action"]:checked');
           const chosen = dirs.find(d => d.id === checked?.value) || dirs[0];
           try { await navigator.clipboard.writeText(chosen.surgicalPrompt); } catch {}
           window.parent?.postMessage({ type: 'codesight:actionPrompt', nodeId: node.id, prompt: chosen.surgicalPrompt }, '*');
@@ -677,28 +725,20 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
       }
     }
 
-    function selectNode(id) {
-      selectedId = id;
-      if (DATA.activeDiagnosis && id === DATA.activeDiagnosis.targetNodeId) {
-        mode = 'diagnosis';
-      } else {
-        mode = 'explore';
-      }
-      updateNodeHighlights();
-      drawEdges();
-      renderActionCard();
+    function renderAll() {
+      renderMapRows();
+      renderInspector();
+      requestAnimationFrame(drawCleanDirectEdges);
     }
 
-    nodeEls.forEach((el, id) => {
-      el.addEventListener('click', () => selectNode(id));
-    });
+    function selectNode(id) {
+      selectedId = id;
+      mode = (DATA.activeDiagnosis && id === DATA.activeDiagnosis.targetNodeId) ? 'diagnosis' : 'explore';
+      renderAll();
+    }
 
-    window.addEventListener('resize', drawEdges);
-    requestAnimationFrame(() => {
-      updateNodeHighlights();
-      drawEdges();
-      renderActionCard();
-    });
+    window.addEventListener('resize', drawCleanDirectEdges);
+    renderAll();
   `;
 
   return `<!doctype html>
@@ -707,7 +747,7 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>CodeSight · ${esc(payload.repoName)}</title>
-  <style>${INTERACTIVE_MAP_CSS}</style>
+  <style>${COCKPIT_CSS}</style>
 </head>
 <body>
   <div class="cs-app">
@@ -716,26 +756,26 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
         <span class="cs-logo">${LOGO_SVG}</span>
         <div>
           <div class="cs-title">${esc(payload.repoName)} · 活架构地图</div>
-          <div class="cs-subtitle">${isDiag ? '已标红当前报错位置，点任意文件可看影响路线与修改方案' : `共 ${payload.totalFiles} 个文件（已展示 ${payload.shownFiles} 个核心文件）· 点任意文件查看用途与调整`}</div>
+          <div class="cs-sub">${isDiag ? '点左侧任意文件，右侧实时显示用途、影响与修改方案' : `共 ${payload.totalFiles} 个文件 · 点左侧任意文件，右侧秒看用途与调整方案`}</div>
         </div>
       </div>
       <div class="cs-legend">
-        ${isDiag ? '<span class="cs-legend-item"><span class="cs-dot" style="background:var(--cs-red)"></span>报错点</span>' : '<span class="cs-legend-item"><span class="cs-dot" style="background:var(--cs-blue)"></span>当前/依赖</span>'}
-        <span class="cs-legend-item"><span class="cs-dot" style="background:var(--cs-amber)"></span>会受影响</span>
+        ${isDiag ? '<span class="cs-legend-item"><span class="cs-dot" style="background:var(--cs-red)"></span>报错点</span>' : ''}
+        <span class="cs-legend-item"><span class="cs-dot" style="background:var(--cs-blue)"></span>当前/依赖</span>
+        <span class="cs-legend-item"><span class="cs-dot" style="background:var(--cs-amber)"></span>直接影响</span>
         <span class="cs-legend-item"><span class="cs-dot" style="background:var(--cs-muted);opacity:0.35"></span>不受影响</span>
       </div>
     </header>
 
-    <div class="cs-canvas-wrap">
-      <div class="cs-canvas-stage" id="cs-stage">
-        <svg class="cs-edges-svg" id="cs-svg"></svg>
-        <div class="cs-lanes" style="--lane-count:${Math.max(1, payload.lanes.length)}">
-          ${lanesHtml}
+    <div class="cs-cockpit">
+      <div class="cs-map-pane">
+        <div class="cs-stage" id="cs-stage">
+          <svg class="cs-edges-svg" id="cs-svg"></svg>
+          <div class="cs-rows" id="cs-rows"></div>
         </div>
       </div>
+      <aside class="cs-inspector" id="cs-inspector"></aside>
     </div>
-
-    <section class="cs-action-card" id="cs-action-card"></section>
   </div>
   <script>${script}</script>
 </body>
@@ -760,5 +800,5 @@ export function renderTraceCardHtml(trace: SymbolTraceReport): string {
     )
     .join('');
 
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CodeSight Trace</title><style>${INTERACTIVE_MAP_CSS}</style></head><body><div class="cs-app"><div class="cs-header"><div class="cs-title">函数调用追踪 · ${esc(trace.querySymbol)}</div><div class="cs-subtitle">${trace.traceMs}ms</div></div>${rows || '<div style="padding:16px;font-size:13px;color:var(--cs-muted)">未找到对应函数或组件。</div>'}</div></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CodeSight Trace</title><style>${COCKPIT_CSS}</style></head><body><div class="cs-app"><div class="cs-header"><div class="cs-title">函数调用追踪 · ${esc(trace.querySymbol)}</div><div class="cs-sub">${trace.traceMs}ms</div></div>${rows || '<div style="padding:16px;font-size:13px;color:var(--cs-muted)">未找到对应函数或组件。</div>'}</div></body></html>`;
 }
