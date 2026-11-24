@@ -144,6 +144,7 @@ const TOOL_DEFINITIONS = [
         },
         language: { type: 'string', enum: ['zh', 'en'] },
         dashedLines: { type: 'string', enum: ['always', 'hover'] },
+        collapsedByDefault: { type: 'boolean' },
         autoOpenBrowser: { type: 'boolean' },
         silentRegressionGuard: { type: 'boolean' },
         architectureMode: { type: 'string', enum: ['auto', 'heuristic', 'llm'] },
@@ -443,6 +444,7 @@ export class CodeSightMcpHandler {
         const patch: CodeSightConfigPatch = {};
         if (args.language === 'zh' || args.language === 'en') patch.language = args.language;
         if (args.dashedLines === 'always' || args.dashedLines === 'hover') patch.dashedLines = args.dashedLines;
+        if (typeof args.collapsedByDefault === 'boolean') patch.collapsedByDefault = args.collapsedByDefault;
         if (typeof args.autoOpenBrowser === 'boolean') patch.autoOpenBrowser = args.autoOpenBrowser;
         if (typeof args.silentRegressionGuard === 'boolean') {
           patch.silentRegressionGuard = args.silentRegressionGuard;

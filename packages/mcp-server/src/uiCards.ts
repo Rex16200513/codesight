@@ -91,15 +91,52 @@ const APPLE_CSS = `
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 11px 16px;
+    padding: 10px 14px;
     border-bottom: 1px solid var(--cs-hairline);
     background: var(--cs-bg);
+  }
+  .cs-shell.is-collapsed .cs-bar {
+    border-bottom: none;
+  }
+  .cs-shell.is-collapsed .cs-body-wrap {
+    display: none;
   }
   .cs-brand {
     display: flex;
     align-items: center;
     gap: 8px;
     min-width: 0;
+    cursor: pointer;
+    user-select: none;
+  }
+  .cs-collapsed-pill {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--cs-muted);
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--cs-canvas);
+    border: 1px solid var(--cs-hairline);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cs-collapsed-pill.is-fault {
+    color: var(--cs-red);
+    background: var(--cs-red-soft);
+    border-color: transparent;
+    font-weight: 550;
+  }
+  .cs-shell.is-collapsed .cs-collapsed-pill {
+    display: inline-flex;
+  }
+  .cs-chev {
+    transition: transform 0.16s ease;
+  }
+  .cs-shell.is-collapsed .cs-chev {
+    transform: rotate(-90deg);
   }
   .cs-mark {
     width: 22px;
@@ -754,6 +791,7 @@ const APPLE_CSS = `
 
 const LOGO_SVG = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.2" y="2.2" width="11.6" height="11.6" rx="3.4" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="2.1" fill="currentColor"/></svg>`;
 const GEAR_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
+const CHEVRON_SVG = `<svg class="cs-chev" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>`;
 
 export function renderVisualProjectMapHtml(
   payload: VisualProjectMapPayload,
@@ -763,6 +801,7 @@ export function renderVisualProjectMapHtml(
   const safeCfg = JSON.stringify({
     language: config.language,
     dashedLines: config.dashedLines,
+    collapsedByDefault: config.collapsedByDefault,
     autoOpenBrowser: config.autoOpenBrowser,
     silentRegressionGuard: config.silentRegressionGuard,
     architectureMode: config.architectureMode,
@@ -779,20 +818,63 @@ export function renderVisualProjectMapHtml(
     const DATA = ${safeData};
     const CFG = ${safeCfg};
     const nodeMap = new Map(DATA.nodes.map(n => [n.id, n]));
+    const shellEl = document.getElementById('cs-shell');
     const stageEl = document.getElementById('cs-stage');
     const svgEl = document.getElementById('cs-svg');
     const colsEl = document.getElementById('cs-cols');
     const footHintEl = document.getElementById('cs-foot-hint');
     const legendUpEl = document.getElementById('cs-leg-up');
     const legendDownEl = document.getElementById('cs-leg-down');
+    const faultTextEl = document.getElementById('cs-fault-text');
+    const collapsedPillEl = document.getElementById('cs-collapsed-pill');
     const backdropEl = document.getElementById('cs-backdrop');
     const sheetEl = document.getElementById('cs-sheet');
 
     const MAX_PER_GROUP = 5;
     const expandedGroups = new Set();
+    let isCollapsed = Boolean(CFG.collapsedByDefault);
     let hoveredId = DATA.activeDiagnosis?.targetNodeId || null;
     let activeModalId = null;
     let settingsOpen = false;
+
+    const LANE_EN = {
+      '页面与入口': 'Pages & Entry',
+      '界面组件': 'UI Components',
+      '页面与组件': 'Pages & UI',
+      '服务与插件': 'Services & MCP',
+      '命令与工具入口': 'CLI & Tools',
+      '核心引擎': 'Core Engine',
+      '核心逻辑': 'Core Logic',
+      '核心分析引擎': 'Analysis Engine',
+      '基础数据定义': 'Shared Types',
+      '基础与数据定义': 'Shared Types',
+      '数据与协议': 'Schemas',
+      '功能模块': 'Modules',
+      '业务模块': 'Modules',
+      '界面视图': 'UI Views',
+      '服务端': 'Server',
+      '后端接口': 'API & Routes',
+      '程序入口': 'Entrypoints',
+      '工具模块': 'Utilities',
+    };
+
+    const ROLE_EN = {
+      '主页面': 'App Entry',
+      '悬浮窗主界面': 'Floating HUD',
+      '界面卡片': 'UI Card',
+      '插件通信接口': 'MCP Interface',
+      '本地后台服务': 'Local Service',
+      '代码分析核心': 'Analysis Core',
+      '全项目共用数据格式': 'Shared Schema',
+      '修复指令生成': 'Prompt Builder',
+      '大模型连接器': 'LLM Adapter',
+      '目录汇总出口': 'Barrel Export',
+      '启动入口': 'Entrypoint',
+      '功能模块': 'Module',
+      '测试文件': 'Test',
+      '界面样式': 'Styles',
+      '项目配置': 'Config',
+    };
 
     const T = {
       zh: {
@@ -805,6 +887,7 @@ export function renderVisualProjectMapHtml(
         hoverHint: '悬停查看连线，点击查看详情',
         faultBtn: '查看修复',
         faultState: '报错位置',
+        filesCount: (n) => n + ' 个文件',
         callers: (n) => n === 0 ? '独立文件' : n + ' 处调用',
         editBtn: (hub) => hub ? '安全调整' : '调整此文件',
         explainBtn: '讲解代码',
@@ -815,6 +898,8 @@ export function renderVisualProjectMapHtml(
         linesLbl: '关联虚线',
         linesAlways: '常显',
         linesHover: '仅悬停',
+        collapseDefLbl: '默认折叠卡片',
+        collapseDefSub: '长对话连续排错时保持精简',
         guardLbl: '静默回归拦截',
         guardSub: '拦截空 catch、as any 与删校验',
         archLbl: '架构分层',
@@ -836,6 +921,7 @@ export function renderVisualProjectMapHtml(
         hoverHint: 'Hover for links, click to inspect',
         faultBtn: 'Inspect fix',
         faultState: 'Error origin',
+        filesCount: (n) => n + ' files',
         callers: (n) => n === 0 ? 'Standalone' : n + ' callers',
         editBtn: (hub) => hub ? 'Safe edit' : 'Edit file',
         explainBtn: 'Explain',
@@ -846,6 +932,8 @@ export function renderVisualProjectMapHtml(
         linesLbl: 'Flow lines',
         linesAlways: 'Always',
         linesHover: 'Hover',
+        collapseDefLbl: 'Collapsed by default',
+        collapseDefSub: 'Keep long debug threads compact',
         guardLbl: 'Regression guard',
         guardSub: 'Catch empty catch, as any, removed guards',
         archLbl: 'Architecture',
@@ -859,6 +947,7 @@ export function renderVisualProjectMapHtml(
       }
     };
     const tr = () => T[CFG.language === 'en' ? 'en' : 'zh'];
+    const isEn = () => CFG.language === 'en';
 
     function escHtml(s) {
       return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -877,8 +966,57 @@ export function renderVisualProjectMapHtml(
     }
 
     function zoneHeading(zone) {
-      if (CFG.language === 'en') return tr().zones[zone.kind] || zone.badge || zone.title;
-      return tr().zones[zone.kind] || zone.title;
+      return tr().zones[zone.kind] || (isEn() ? (zone.badge || zone.title) : zone.title);
+    }
+
+    function laneHeading(title) {
+      if (!isEn()) return title;
+      if (LANE_EN[title]) return LANE_EN[title];
+      if (!/[\\u4e00-\\u9fa5]/.test(title)) return title;
+      if (title.includes('前端') || title.includes('界面') || title.includes('组件')) return 'UI Components';
+      if (title.includes('服务') || title.includes('接口') || title.includes('插件')) return 'Services & API';
+      if (title.includes('命令') || title.includes('入口')) return 'Entrypoints';
+      if (title.includes('数据') || title.includes('基础') || title.includes('定义')) return 'Shared Types';
+      if (title.includes('核心') || title.includes('引擎') || title.includes('分析')) return 'Core Engine';
+      return 'Modules';
+    }
+
+    function nodeRole(node) {
+      if (!isEn()) return node.roleLabel;
+      if (ROLE_EN[node.roleLabel]) return ROLE_EN[node.roleLabel];
+      if (!/[\\u4e00-\\u9fa5]/.test(node.roleLabel || '')) return node.roleLabel || 'Module';
+      return tr().zones[node.zoneKind] || 'Module';
+    }
+
+    function nodeSummary(node) {
+      if (!isEn()) return node.summary;
+      if (node.summary && !/[\\u4e00-\\u9fa5]/.test(node.summary)) return node.summary;
+      const role = nodeRole(node);
+      const ex = (node.exports || []).slice(0, 2).join(', ');
+      if (node.downstreamReach >= 5) {
+        return role + ' shared across ' + node.downstreamReach + ' files' + (ex ? ' (' + ex + ')' : '') + '.';
+      }
+      if (node.zoneKind === 'frontend') {
+        return role + (ex ? ' rendering ' + ex : '') + '.';
+      }
+      if (node.zoneKind === 'backend') {
+        return role + ' handling requests' + (ex ? ' via ' + ex : '') + '.';
+      }
+      return role + (ex ? ' exporting ' + ex : ' module') + '.';
+    }
+
+    function faultHeadline() {
+      if (!DATA.activeDiagnosis) return '';
+      if (isEn()) return DATA.activeDiagnosis.headlineEn || DATA.activeDiagnosis.headline;
+      return DATA.activeDiagnosis.headline;
+    }
+
+    function setCollapsed(next) {
+      isCollapsed = Boolean(next);
+      shellEl.classList.toggle('is-collapsed', isCollapsed);
+      if (!isCollapsed) {
+        requestAnimationFrame(drawDashedLines);
+      }
     }
 
     function renderPrototypeSvg(node) {
@@ -1056,6 +1194,17 @@ export function renderVisualProjectMapHtml(
       if (legendDownEl) legendDownEl.innerHTML = '<span class="cs-dash"></span>' + t.usedBy;
       const fb = document.getElementById('cs-open-fault');
       if (fb) fb.textContent = t.faultBtn;
+      if (faultTextEl) faultTextEl.textContent = faultHeadline();
+      if (collapsedPillEl) {
+        if (DATA.activeDiagnosis && DATA.activeDiagnosis.targetNodeId) {
+          const fn = shortName(DATA.activeDiagnosis.targetNodeId);
+          collapsedPillEl.classList.add('is-fault');
+          collapsedPillEl.innerHTML = '<span class="cs-dot-fault"></span>' + escHtml(fn);
+        } else {
+          collapsedPillEl.classList.remove('is-fault');
+          collapsedPillEl.textContent = t.filesCount(DATA.totalFiles);
+        }
+      }
     }
 
     function renderBoard() {
@@ -1096,7 +1245,7 @@ export function renderVisualProjectMapHtml(
                 : '');
 
           return '<div class="cs-group">' +
-            '<div class="cs-group-label">' + escHtml(lane.title) + '</div>' +
+            '<div class="cs-group-label">' + escHtml(laneHeading(lane.title)) + '</div>' +
             '<div class="cs-list">' + rows + more + '</div>' +
           '</div>';
         }).join('');
@@ -1159,12 +1308,12 @@ export function renderVisualProjectMapHtml(
 
       if (footHintEl) {
         if (focusNode) {
-          footHintEl.textContent = shortName(focusNode) + ' — ' + (focusNode.roleLabel || focusNode.path);
+          footHintEl.textContent = shortName(focusNode) + ' — ' + nodeRole(focusNode);
         } else {
           footHintEl.textContent = tr().hoverHint;
         }
       }
-      drawDashedLines();
+      if (!isCollapsed) drawDashedLines();
     }
 
     function openFileSheet(id) {
@@ -1196,12 +1345,14 @@ export function renderVisualProjectMapHtml(
         const dirs = DATA.activeDiagnosis.directions;
         footHtml =
           '<div class="cs-choices">' +
-            dirs.map((d, i) =>
-              '<label class="cs-choice">' +
+            dirs.map((d, i) => {
+              const dLabel = isEn() ? (d.labelEn || d.label) : d.label;
+              const dStrat = isEn() ? (d.strategyEn || d.strategy) : d.strategy;
+              return '<label class="cs-choice">' +
                 '<input type="radio" name="cs_dir" value="' + escHtml(d.id) + '" ' + (i === 0 ? 'checked' : '') + ' />' +
-                '<div><div class="cs-choice-t">' + escHtml(d.label) + '</div><div class="cs-choice-s">' + escHtml(d.strategy) + '</div></div>' +
-              '</label>'
-            ).join('') +
+                '<div><div class="cs-choice-t">' + escHtml(dLabel) + '</div><div class="cs-choice-s">' + escHtml(dStrat) + '</div></div>' +
+              '</label>';
+            }).join('') +
           '</div>' +
           '<button type="button" class="cs-btn-primary" id="cs-act-fix">' + t.copyFix + '</button>';
       } else {
@@ -1212,10 +1363,11 @@ export function renderVisualProjectMapHtml(
           '</div>';
       }
 
+      const crumbZone = tr().zones[node.zoneKind] || (isEn() ? node.zoneKind : node.zoneTitle);
       sheetEl.innerHTML =
         '<div class="cs-sheet-head">' +
           '<div class="cs-crumb">' +
-            '<span>' + escHtml(node.zoneTitle) + '</span><span>›</span>' +
+            '<span>' + escHtml(crumbZone) + '</span><span>›</span>' +
             '<strong>' + escHtml(shortName(node)) + '</strong>' +
           '</div>' +
           '<button type="button" class="cs-close" id="cs-close-btn" aria-label="Close">✕</button>' +
@@ -1228,7 +1380,7 @@ export function renderVisualProjectMapHtml(
                 '<h3 class="cs-meta-title">' + escHtml(shortName(node)) + '</h3>' +
                 '<span class="cs-state-dot" style="color:' + stateColor + '">' + escHtml(stateLabel) + '</span>' +
               '</div>' +
-              '<p class="cs-meta-desc">' + escHtml(isFault ? (DATA.activeDiagnosis.headline || node.summary) : node.summary) + '</p>' +
+              '<p class="cs-meta-desc">' + escHtml(isFault ? (faultHeadline() || nodeSummary(node)) : nodeSummary(node)) + '</p>' +
             '</div>' +
           '</div>' +
           '<div class="cs-links">' +
@@ -1304,6 +1456,10 @@ export function renderVisualProjectMapHtml(
               '</div>' +
             '</div>' +
             '<div class="cs-set-row">' +
+              '<div><div class="cs-set-lbl">' + t.collapseDefLbl + '</div><div class="cs-set-sub">' + t.collapseDefSub + '</div></div>' +
+              '<label class="cs-switch"><input type="checkbox" id="cs-set-collapse" ' + (CFG.collapsedByDefault ? 'checked' : '') + ' /><span class="cs-slider"></span></label>' +
+            '</div>' +
+            '<div class="cs-set-row">' +
               '<div><div class="cs-set-lbl">' + t.guardLbl + '</div><div class="cs-set-sub">' + t.guardSub + '</div></div>' +
               '<label class="cs-switch"><input type="checkbox" id="cs-set-guard" ' + (CFG.silentRegressionGuard ? 'checked' : '') + ' /><span class="cs-slider"></span></label>' +
             '</div>' +
@@ -1357,6 +1513,7 @@ export function renderVisualProjectMapHtml(
 
       const saveBtn = document.getElementById('cs-save-settings');
       saveBtn?.addEventListener('click', async () => {
+        CFG.collapsedByDefault = Boolean(document.getElementById('cs-set-collapse')?.checked);
         CFG.silentRegressionGuard = Boolean(document.getElementById('cs-set-guard')?.checked);
         CFG.llm.enabled = Boolean(document.getElementById('cs-set-llm')?.checked);
         CFG.llm.baseUrl = document.getElementById('cs-set-url')?.value?.trim() || 'https://api.openai.com/v1';
@@ -1365,6 +1522,7 @@ export function renderVisualProjectMapHtml(
         const patch = {
           language: CFG.language,
           dashedLines: CFG.dashedLines,
+          collapsedByDefault: CFG.collapsedByDefault,
           silentRegressionGuard: CFG.silentRegressionGuard,
           architectureMode: CFG.architectureMode,
           llm: { enabled: CFG.llm.enabled, baseUrl: CFG.llm.baseUrl, model: CFG.llm.model },
@@ -1404,8 +1562,11 @@ export function renderVisualProjectMapHtml(
       btn.addEventListener('click', () => {
         CFG.language = btn.dataset.langBtn;
         renderBoard();
+        if (activeModalId) openFileSheet(activeModalId);
       });
     });
+    document.getElementById('cs-toggle-collapse')?.addEventListener('click', () => setCollapsed(!isCollapsed));
+    document.getElementById('cs-brand-toggle')?.addEventListener('click', () => setCollapsed(!isCollapsed));
     document.getElementById('cs-open-settings')?.addEventListener('click', openSettingsSheet);
     document.getElementById('cs-open-fault')?.addEventListener('click', () => {
       if (DATA.activeDiagnosis?.targetNodeId) openFileSheet(DATA.activeDiagnosis.targetNodeId);
@@ -1416,9 +1577,10 @@ export function renderVisualProjectMapHtml(
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeSheet();
     });
-    window.addEventListener('resize', drawDashedLines);
+    window.addEventListener('resize', () => { if (!isCollapsed) drawDashedLines(); });
 
     renderBoard();
+    setCollapsed(isCollapsed);
   `;
 
   return `<!doctype html>
@@ -1430,12 +1592,13 @@ export function renderVisualProjectMapHtml(
   <style>${APPLE_CSS}</style>
 </head>
 <body>
-  <div class="cs-shell">
+  <div class="cs-shell${config.collapsedByDefault ? ' is-collapsed' : ''}" id="cs-shell">
     <header class="cs-bar">
-      <div class="cs-brand">
+      <div class="cs-brand" id="cs-brand-toggle" title="Click to collapse or expand">
         <span class="cs-mark">${LOGO_SVG}</span>
         <span class="cs-brand-name">CodeSight</span>
         <span class="cs-brand-repo">· ${esc(payload.repoName)}</span>
+        <span class="cs-collapsed-pill" id="cs-collapsed-pill"></span>
       </div>
       <div class="cs-bar-right">
         <div class="cs-seg" role="group" aria-label="Language">
@@ -1443,33 +1606,36 @@ export function renderVisualProjectMapHtml(
           <button type="button" data-lang-btn="en" class="${config.language === 'en' ? 'is-on' : ''}">EN</button>
         </div>
         <button type="button" class="cs-icon-btn" id="cs-open-settings" title="Settings">${GEAR_SVG}</button>
+        <button type="button" class="cs-icon-btn" id="cs-toggle-collapse" title="Collapse / Expand">${CHEVRON_SVG}</button>
       </div>
     </header>
 
-    ${
-      diag
-        ? `<div class="cs-fault-strip">
-            <div class="cs-fault-msg">
-              <span class="cs-fault-dot"></span>
-              <span class="cs-fault-text">${esc(diag.headline)}</span>
-            </div>
-            <button type="button" class="cs-fault-act" id="cs-open-fault">${config.language === 'en' ? 'Inspect fix' : '查看修复'}</button>
-          </div>`
-        : ''
-    }
+    <div class="cs-body-wrap">
+      ${
+        diag
+          ? `<div class="cs-fault-strip">
+              <div class="cs-fault-msg">
+                <span class="cs-fault-dot"></span>
+                <span class="cs-fault-text" id="cs-fault-text">${esc(config.language === 'en' ? diag.headlineEn : diag.headline)}</span>
+              </div>
+              <button type="button" class="cs-fault-act" id="cs-open-fault">${config.language === 'en' ? 'Inspect fix' : '查看修复'}</button>
+            </div>`
+          : ''
+      }
 
-    <div class="cs-stage" id="cs-stage">
-      <svg class="cs-svg" id="cs-svg"></svg>
-      <div class="cs-cols" id="cs-cols"></div>
+      <div class="cs-stage" id="cs-stage">
+        <svg class="cs-svg" id="cs-svg"></svg>
+        <div class="cs-cols" id="cs-cols"></div>
+      </div>
+
+      <footer class="cs-foot">
+        <span class="cs-foot-hint" id="cs-foot-hint"></span>
+        <span class="cs-foot-legend">
+          <span id="cs-leg-up" style="color:var(--cs-blue)"></span>
+          <span id="cs-leg-down" style="color:var(--cs-amber)"></span>
+        </span>
+      </footer>
     </div>
-
-    <footer class="cs-foot">
-      <span class="cs-foot-hint" id="cs-foot-hint"></span>
-      <span class="cs-foot-legend">
-        <span id="cs-leg-up" style="color:var(--cs-blue)"></span>
-        <span id="cs-leg-down" style="color:var(--cs-amber)"></span>
-      </span>
-    </footer>
   </div>
 
   <div class="cs-backdrop" id="cs-backdrop">

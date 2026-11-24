@@ -27,6 +27,7 @@ struct UnifiedCodeSightConfig: Codable, Sendable, Equatable {
     var schemaVersion: String
     var language: String
     var dashedLines: String
+    var collapsedByDefault: Bool?
     var autoOpenBrowser: Bool
     var silentRegressionGuard: Bool
     var architectureMode: String
@@ -37,6 +38,7 @@ struct UnifiedCodeSightConfig: Codable, Sendable, Equatable {
         schemaVersion: "1.0",
         language: "zh",
         dashedLines: "always",
+        collapsedByDefault: false,
         autoOpenBrowser: false,
         silentRegressionGuard: true,
         architectureMode: "auto",

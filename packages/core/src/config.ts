@@ -11,6 +11,7 @@ export interface CodeSightConfig {
   schemaVersion: '1.0';
   language: CodeSightLanguage;
   dashedLines: DashedLineMode;
+  collapsedByDefault: boolean;
   autoOpenBrowser: boolean;
   silentRegressionGuard: boolean;
   architectureMode: ArchitectureMode;
@@ -35,6 +36,7 @@ export const DEFAULT_CODESIGHT_CONFIG: CodeSightConfig = {
   schemaVersion: '1.0',
   language: 'zh',
   dashedLines: 'always',
+  collapsedByDefault: false,
   autoOpenBrowser: false,
   silentRegressionGuard: true,
   architectureMode: 'auto',
@@ -90,6 +92,10 @@ function mergeConfig(base: CodeSightConfig, patch?: CodeSightConfigPatch | null)
     schemaVersion: '1.0',
     language: lang,
     dashedLines: dashed,
+    collapsedByDefault:
+      typeof patch.collapsedByDefault === 'boolean'
+        ? patch.collapsedByDefault
+        : base.collapsedByDefault,
     autoOpenBrowser:
       typeof patch.autoOpenBrowser === 'boolean' ? patch.autoOpenBrowser : base.autoOpenBrowser,
     silentRegressionGuard:

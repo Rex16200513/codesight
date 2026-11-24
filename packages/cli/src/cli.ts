@@ -281,6 +281,7 @@ async function main() {
       const asBool = val === 'true' || val === '1' || val === 'on';
       if (key === 'language' && (val === 'zh' || val === 'en')) patch.language = val;
       else if (key === 'dashedLines' && (val === 'always' || val === 'hover')) patch.dashedLines = val;
+      else if (key === 'collapsedByDefault') patch.collapsedByDefault = asBool;
       else if (key === 'autoOpenBrowser') patch.autoOpenBrowser = asBool;
       else if (key === 'silentRegressionGuard') patch.silentRegressionGuard = asBool;
       else if (key === 'architectureMode' && (val === 'auto' || val === 'heuristic' || val === 'llm')) {

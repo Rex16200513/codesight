@@ -85,13 +85,16 @@ export interface VisualProjectMapPayload {
     targetLine?: number;
     targetSymbol?: string;
     headline: string;
+    headlineEn: string;
     subtext: string;
     safeZoneCount: number;
     silentRegressions: Array<{ title: string; riskImpact: string }>;
     directions: Array<{
       id: string;
       label: string;
+      labelEn: string;
       strategy: string;
+      strategyEn: string;
       recommended?: boolean;
       surgicalPrompt: string;
     }>;
@@ -277,24 +280,82 @@ export function buildVisualProjectMap(
     const headline = (sentences[0] || rawDiag).trim();
     const subtext = sentences.slice(1).join('。') + (sentences.length > 1 ? '。' : '');
 
+    const targetName = diagnosis.primaryTarget?.file.name || 'target file';
+    const targetLine = diagnosis.primaryTarget?.line;
+    const impactCount =
+      (diagnosis.blastRadius?.directImpact.length ?? 0) +
+      (diagnosis.blastRadius?.indirectImpact.length ?? 0);
+    const headlineEn =
+      impactCount >= 5
+        ? `Error in ${targetName}${targetLine ? `:${targetLine}` : ''} — shared by ${impactCount} files`
+        : impactCount > 0
+        ? `Error in ${targetName}${targetLine ? `:${targetLine}` : ''} — affects ${impactCount} files`
+        : `Error in ${targetName}${targetLine ? `:${targetLine}` : ''} — isolated file`;
+
+    const toDirectionEn = (d: ProblemProjectionReport['directions'][number]): { labelEn: string; strategyEn: string } => {
+      switch (d.id) {
+        case 'dir-protect-hub':
+          return {
+            labelEn: `Fix inside ${targetName} only`,
+            strategyEn: `Keep exports compatible so none of the ${impactCount} callers break.`,
+          };
+        case 'dir-cascade-upgrade':
+          return {
+            labelEn: `Update ${targetName} + ${impactCount} callers`,
+            strategyEn: `Propagate signature changes cleanly across all dependent files.`,
+          };
+        case 'dir-local-bridge-fix':
+          return {
+            labelEn: `Fix ${targetName} & verify callers`,
+            strategyEn: `Resolve the root issue and check direct consumers.`,
+          };
+        case 'dir-trace-upstream':
+          return {
+            labelEn: `Fix at upstream source`,
+            strategyEn: `Inspect upstream inputs instead of patching downstream.`,
+          };
+        case 'dir-safe-leaf-fix':
+          return {
+            labelEn: `Fix ${targetName} directly`,
+            strategyEn: `No other files depend on it — safe self-contained edit.`,
+          };
+        case 'dir-check-upstream-leaf':
+          return {
+            labelEn: `Sync with upstream types`,
+            strategyEn: `Align ${targetName} with the latest exported contracts.`,
+          };
+        default:
+          return {
+            labelEn: d.label,
+            strategyEn: d.strategy,
+          };
+      }
+    };
+
     activeDiagnosis = {
       targetNodeId: faultPath,
-      targetLine: diagnosis.primaryTarget?.line,
+      targetLine,
       targetSymbol: diagnosis.primaryTarget?.symbol?.name,
       headline,
+      headlineEn,
       subtext,
       safeZoneCount: diagnosis.blastRadius?.safeZoneCount ?? 0,
       silentRegressions: diagnosis.silentRegressions.map((r) => ({
         title: r.title,
         riskImpact: r.riskImpact,
       })),
-      directions: diagnosis.directions.map((d) => ({
-        id: d.id,
-        label: d.label,
-        strategy: d.strategy,
-        recommended: d.recommended,
-        surgicalPrompt: d.surgicalPrompt,
-      })),
+      directions: diagnosis.directions.map((d) => {
+        const en = toDirectionEn(d);
+        return {
+          id: d.id,
+          label: d.label,
+          labelEn: en.labelEn,
+          strategy: d.strategy,
+          strategyEn: en.strategyEn,
+          recommended: d.recommended,
+          surgicalPrompt: d.surgicalPrompt,
+        };
+      }),
       retrievalMs: diagnosis.tokenEconomy.retrievalMs,
     };
   }
