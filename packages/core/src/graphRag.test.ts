@@ -4,8 +4,10 @@ import test from 'node:test';
 import {
   BuiltInAstGraphProvider,
   McpEnrichedGraphProvider,
+  buildVisualProjectMap,
   generateRepoMap,
   projectProblemOntoRepo,
+  resolveProjectArchitecture,
   traceSymbol,
 } from './engine.ts';
 
@@ -72,4 +74,40 @@ test('McpEnrichedGraphProvider connects to an external stdio MCP Graph-RAG serve
     report.externalGraphHint?.relatedFiles.includes('packages/ui/src/components/GlassBoxHUD.tsx')
   );
   assert.equal(report.primaryTarget?.symbol?.name, 'buildSurgicalFixPrompt');
+});
+
+test('resolveProjectArchitecture detects Frontend/Backend/Shared separation and honors host-agent overrides', async () => {
+  const { index, graph, callGraph } = await generateRepoMap(REPO_ROOT, { persistCache: false });
+  const autoBp = await resolveProjectArchitecture(index, graph, { persistCache: false });
+  assert.equal(autoBp.archetype, 'fullstack');
+  assert.ok(autoBp.zones.some((z) => z.kind === 'frontend'));
+  assert.ok(autoBp.zones.some((z) => z.kind === 'backend'));
+  assert.ok(autoBp.zones.some((z) => z.kind === 'shared'));
+
+  const customBp = await resolveProjectArchitecture(index, graph, {
+    persistCache: false,
+    override: {
+      archetype: 'monorepo-platform',
+      archetypeLabel: 'AI 定制前后端分层',
+      projectHeadline: '由宿主 Agent 规划的专属项目架构',
+      zones: [
+        {
+          title: '前端与桌面层',
+          badge: 'Frontend',
+          kind: 'frontend',
+          groups: [{ title: '界面视图', files: ['apps/hud/src/App.tsx', 'packages/ui/src/components/GlassBoxHUD.tsx'] }],
+        },
+        {
+          title: '后端与 MCP 插件层',
+          badge: 'Backend',
+          kind: 'backend',
+          groups: [{ title: '服务端', files: ['packages/mcp-server/src/server.ts', 'packages/sidecar/src/server.ts'] }],
+        },
+      ],
+    },
+  });
+  assert.equal(customBp.source, 'host-agent');
+  const visual = buildVisualProjectMap(index, graph, callGraph, undefined, customBp);
+  assert.equal(visual.zones.length, 2);
+  assert.equal(visual.archetypeLabel, 'AI 定制前后端分层');
 });

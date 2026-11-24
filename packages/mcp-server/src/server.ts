@@ -4,8 +4,10 @@ import {
   buildVisualProjectMap,
   generateRepoMap,
   projectProblemOntoRepo,
+  resolveProjectArchitecture,
   safeGitDiff,
   traceSymbol,
+  type HostArchitectureOverride,
 } from '@glassbox/core/engine';
 import { renderTraceCardHtml, renderVisualProjectMapHtml } from './uiCards.ts';
 
@@ -39,6 +41,11 @@ const TOOL_DEFINITIONS = [
         repoDir: {
           type: 'string',
           description: 'Absolute path to the repository root (defaults to current working directory).',
+        },
+        architectureOverride: {
+          type: 'object',
+          description:
+            'Optional semantic architecture blueprint provided by the host AI agent (e.g., custom Frontend / Backend / Shared zones tailored to this specific project). Cached locally once provided.',
         },
       },
     },
@@ -230,17 +237,22 @@ export class CodeSightMcpHandler {
 
     if (toolName === 'codesight_map') {
       const { map, index, graph, callGraph } = await generateRepoMap(repoDir);
-      const visualMap = buildVisualProjectMap(index, graph, callGraph);
+      const override = args.architectureOverride as HostArchitectureOverride | undefined;
+      const blueprint = await resolveProjectArchitecture(index, graph, { override });
+      const visualMap = buildVisualProjectMap(index, graph, callGraph, undefined, blueprint);
       const uri = 'ui://codesight/map/latest';
       const html = renderVisualProjectMapHtml(visualMap);
       this.uiResources.set(uri, { title: `CodeSight Map (${map.repoName})`, html });
 
       const textSummary = [
-        `CodeSight Map · ${map.repoName} (${map.totalFiles} files, ${map.totalSymbols} AST symbols, ${map.scanMs}ms)`,
-        'Core Hubs (highest blast radius):',
-        ...map.hubs.slice(0, 5).map((h) => `- ${h.path} [reaches ${h.downstreamReach} files] — ${h.roleLabel}: ${h.summary}`),
-        'Layers:',
-        ...map.sections.map((s) => `- ${s.layerTitle}: ${s.files.map((f) => f.name).slice(0, 6).join(', ')}`),
+        `CodeSight Map · ${map.repoName} [${blueprint.archetypeLabel} · ${blueprint.source}] (${map.totalFiles} files, ${map.totalSymbols} AST symbols, ${map.scanMs}ms)`,
+        `Architecture: ${blueprint.projectHeadline}`,
+        ...blueprint.zones.map(
+          (z) =>
+            `- [${z.badge}] ${z.title}: ${z.groups.map((g) => `${g.title}(${g.files.length})`).join(', ')}`
+        ),
+        'Most-used Foundation Files:',
+        ...map.hubs.slice(0, 5).map((h) => `- ${h.path} [used by ${h.downstreamReach} files] — ${h.roleLabel}`),
       ].join('\n');
 
       return {
@@ -251,7 +263,7 @@ export class CodeSightMcpHandler {
             { type: 'text', text: textSummary },
             { type: 'resource', resource: { uri, mimeType: 'text/html+mcp', text: html } },
           ],
-          structuredContent: { map, visualMap },
+          structuredContent: { map, blueprint, visualMap },
         },
       };
     }
@@ -314,8 +326,9 @@ export class CodeSightMcpHandler {
       const useGit = Boolean(args.useGit);
       const rawDiff = useGit ? safeGitDiff(repoDir).diff : '';
       const { index, graph, callGraph } = await generateRepoMap(repoDir);
+      const blueprint = await resolveProjectArchitecture(index, graph);
       const report = await projectProblemOntoRepo(repoDir, { rawError, rawDiff });
-      const visualMap = buildVisualProjectMap(index, graph, callGraph, report);
+      const visualMap = buildVisualProjectMap(index, graph, callGraph, report, blueprint);
 
       const uri = 'ui://codesight/diagnose/latest';
       const html = renderVisualProjectMapHtml(visualMap);

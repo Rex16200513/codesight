@@ -180,18 +180,83 @@ const COCKPIT_CSS = `
     z-index: 2;
     display: flex;
     flex-direction: column;
-    gap: 24px; /* Generous horizontal gap so vertical curves breathe cleanly! */
+    gap: 14px;
+  }
+  .cs-zone-box {
+    border-radius: 13px;
+    border: 1px solid var(--cs-border);
+    background: var(--cs-card);
+    padding: 11px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .cs-zone-box.kind-frontend {
+    border-color: rgba(37, 99, 235, 0.22);
+    background: linear-gradient(180deg, rgba(37, 99, 235, 0.035), var(--cs-card));
+  }
+  .cs-zone-box.kind-backend {
+    border-color: rgba(124, 58, 237, 0.22);
+    background: linear-gradient(180deg, rgba(124, 58, 237, 0.035), var(--cs-card));
+  }
+  .cs-zone-box.kind-shared,
+  .cs-zone-box.kind-core {
+    border-color: var(--cs-border);
+    background: var(--cs-card);
+  }
+  .cs-zone-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .cs-zone-title {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--cs-ink);
+  }
+  .cs-zone-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1.5px 7px;
+    border-radius: 999px;
+    font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+    background: var(--cs-canvas);
+    color: var(--cs-muted);
+  }
+  .cs-zone-box.kind-frontend .cs-zone-badge {
+    background: var(--cs-blue-soft);
+    color: var(--cs-blue);
+  }
+  .cs-zone-box.kind-backend .cs-zone-badge {
+    background: rgba(124, 58, 237, 0.11);
+    color: #7c3aed;
+  }
+  .cs-boundary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--cs-muted);
+    margin: -4px 4px;
+  }
+  .cs-boundary::before,
+  .cs-boundary::after {
+    content: '';
+    flex: 1;
+    border-top: 1px dashed var(--cs-border-strong);
   }
   .cs-row-block {
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 6px;
   }
   .cs-row-label {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 600;
     color: var(--cs-muted);
     padding: 0 2px;
@@ -461,9 +526,8 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
       const allDownSet = new Set(sel ? sel.allDownstreamPaths : []);
       const isFaultSelected = mode === 'diagnosis' && DATA.activeDiagnosis?.targetNodeId === selectedId;
 
-      rowsEl.innerHTML = DATA.lanes.map(lane => {
+      const renderLaneBlock = (lane) => {
         const isExpanded = expandedLanes.has(lane.id);
-        // Always ensure selected/fault/direct-connected nodes stay visible in compact row
         const orderedIds = [...lane.nodeIds].sort((a, b) => {
           const score = (id) =>
             id === selectedId ? 4 :
@@ -511,7 +575,25 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
           '<div class="cs-row-label"><span>' + escHtml(lane.title) + '</span><span style="font-weight:400">' + escHtml(lane.subtitle) + '</span></div>' +
           '<div class="cs-row-chips">' + chips + moreBtn + '</div>' +
         '</div>';
-      }).join('');
+      };
+
+      const zones = DATA.zones && DATA.zones.length > 0 ? DATA.zones : [{ id: 'default', title: '项目层级', badge: 'Architecture', kind: 'core', lanes: DATA.lanes }];
+      const htmlParts = [];
+      zones.forEach((zone, zIdx) => {
+        if (zIdx > 0 && zones[zIdx - 1].kind === 'frontend' && zone.kind === 'backend') {
+          htmlParts.push('<div class="cs-boundary">前后端边界 · HTTP / MCP / 协议通信</div>');
+        }
+        htmlParts.push(
+          '<div class="cs-zone-box kind-' + escHtml(zone.kind) + '">' +
+            '<div class="cs-zone-header">' +
+              '<span class="cs-zone-title">' + escHtml(zone.title) + '</span>' +
+              '<span class="cs-zone-badge">' + escHtml(zone.badge) + '</span>' +
+            '</div>' +
+            zone.lanes.map(renderLaneBlock).join('') +
+          '</div>'
+        );
+      });
+      rowsEl.innerHTML = htmlParts.join('');
 
       rowsEl.querySelectorAll('.cs-chip').forEach(btn => {
         btn.addEventListener('click', () => selectNode(btn.dataset.nodeId));
@@ -755,8 +837,8 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
       <div class="cs-brand">
         <span class="cs-logo">${LOGO_SVG}</span>
         <div>
-          <div class="cs-title">${esc(payload.repoName)} · 活架构地图</div>
-          <div class="cs-sub">${isDiag ? '点左侧任意文件，右侧实时显示用途、影响与修改方案' : `共 ${payload.totalFiles} 个文件 · 点左侧任意文件，右侧秒看用途与调整方案`}</div>
+          <div class="cs-title">${esc(payload.repoName)} · ${esc(payload.archetypeLabel || '活架构地图')}</div>
+          <div class="cs-sub">${isDiag ? '已标红报错位置，点左侧文件右侧即看用途、影响与方案' : `${esc(payload.projectHeadline)} · 共 ${payload.totalFiles} 个文件`}</div>
         </div>
       </div>
       <div class="cs-legend">

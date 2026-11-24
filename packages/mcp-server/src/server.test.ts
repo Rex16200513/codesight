@@ -66,7 +66,7 @@ test('Stdio MCP Server handles initialize, tools/list, tools/call (trace & diagn
 
     const uiRead = await rpc('resources/read', { uri: 'ui://codesight/diagnose/latest' });
     const html = ((uiRead.result as { contents: Array<{ text: string }> }).contents)[0].text;
-    assert.match(html, /活架构地图/);
+    assert.match(html, /cs-zone-box/);
     assert.match(html, /cs-edges-svg/);
     assert.match(html, /复制修改指令给 AI/);
   } finally {

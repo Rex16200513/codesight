@@ -11,6 +11,7 @@ import {
   buildVisualProjectMap,
   generateRepoMap,
   projectProblemOntoRepo,
+  resolveProjectArchitecture,
   safeGitDiff,
   traceSymbol,
 } from '@glassbox/core/engine';
@@ -112,12 +113,13 @@ export function startSidecarServer(options: SidecarOptions = {}) {
         };
         const dir = body.repoDir || process.cwd();
         const { index, graph, callGraph } = await generateRepoMap(dir);
+        const blueprint = await resolveProjectArchitecture(index, graph);
         let diagReport;
         if (body.rawError || body.useGit) {
           const rawDiff = body.useGit ? safeGitDiff(dir).diff : '';
           diagReport = await projectProblemOntoRepo(dir, { rawError: body.rawError, rawDiff });
         }
-        sendJson(res, 200, buildVisualProjectMap(index, graph, callGraph, diagReport));
+        sendJson(res, 200, buildVisualProjectMap(index, graph, callGraph, diagReport, blueprint));
       } catch (err) {
         sendJson(res, 400, { error: err instanceof Error ? err.message : 'visual-map failed' });
       }

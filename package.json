@@ -1,6 +1,6 @@
 {
   "name": "codesight",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "description": "CodeSight — Universal GraphRAG Plugin (MCP Apps) & Apple Floating HUD for Vibe Coding",
   "workspaces": [

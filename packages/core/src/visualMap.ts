@@ -1,3 +1,8 @@
+import {
+  detectSmartArchitecture,
+  type ArchitectureBlueprint,
+  type ZoneKind,
+} from './architecturePlanner.ts';
 import { buildCodeGraph, type CodeDependencyGraph } from './codeGraph.ts';
 import type { ProblemProjectionReport } from './comprehensionEngine.ts';
 import { buildSymbolCallGraph, type SymbolCallGraph } from './graphProvider.ts';
@@ -8,6 +13,7 @@ export interface VisualMapNode {
   name: string;
   path: string;
   laneId: string;
+  zoneId: string;
   roleLabel: string;
   summary: string;
   inDegree: number;
@@ -15,15 +21,10 @@ export interface VisualMapNode {
   downstreamReach: number;
   isHub: boolean;
   exports: string[];
-  /** Direct upstream file paths (what this file depends on) */
   upstreamPaths: string[];
-  /** Direct downstream file paths (files that directly import this file) */
   directDownstreamPaths: string[];
-  /** All transitive downstream file paths (direct + indirect) */
   allDownstreamPaths: string[];
-  /** Cross-file function/component callers for human inspection */
   callers: Array<{ symbol: string; callerName: string; callerFile: string; callerLine: number }>;
-  /** Status when an error or git diff is projected onto the map */
   status: 'normal' | 'fault' | 'direct-impact' | 'indirect-impact' | 'upstream';
 }
 
@@ -39,16 +40,30 @@ export interface VisualMapLane {
   nodeIds: string[];
 }
 
+export interface VisualMapZone {
+  id: string;
+  title: string;
+  badge: string;
+  kind: ZoneKind;
+  lanes: VisualMapLane[];
+}
+
 export interface VisualProjectMapPayload {
   repoName: string;
+  archetype: ArchitectureBlueprint['archetype'];
+  archetypeLabel: string;
+  projectHeadline: string;
+  architectureSource: ArchitectureBlueprint['source'];
   totalFiles: number;
   shownFiles: number;
   hiddenSupportFiles: number;
   scanMs: number;
+  /** Semantic Architecture Zones (e.g. Frontend Zone vs Backend Zone vs Shared Core Zone) */
+  zones: VisualMapZone[];
+  /** Flattened lanes for backwards compatibility */
   lanes: VisualMapLane[];
   nodes: VisualMapNode[];
   edges: VisualMapEdge[];
-  /** Present when an error or diff is actively projected onto the map */
   activeDiagnosis?: {
     targetNodeId?: string;
     targetLine?: number;
@@ -68,34 +83,6 @@ export interface VisualProjectMapPayload {
   };
 }
 
-interface LaneDef {
-  id: string;
-  title: string;
-  subtitle: string;
-  layers: FileLayer[];
-}
-
-const LANE_DEFS: LaneDef[] = [
-  {
-    id: 'ui-entry',
-    title: '界面与入口',
-    subtitle: '用户交互与启动层',
-    layers: ['entrypoint', 'ui-component'],
-  },
-  {
-    id: 'service-plugin',
-    title: '服务与插件',
-    subtitle: 'MCP / 网关 / 桥接',
-    layers: ['server-api'],
-  },
-  {
-    id: 'core-engine',
-    title: '核心逻辑',
-    subtitle: '分析、图谱与业务处理',
-    layers: ['core-logic', 'module'],
-  },
-];
-
 function collectTransitiveDownstream(
   startPath: string,
   graph: CodeDependencyGraph
@@ -114,76 +101,71 @@ function collectTransitiveDownstream(
 }
 
 /**
- * Builds a clean, anti-spiderweb Visual Architecture Map payload from a real repository index & graph.
- * Designed to power:
- * - Interactive MCP App Cards inside Antigravity / ChatGPT / Claude / Orca
- * - Standalone Web / Native Desktop HUD Canvases
+ * Builds a Project-Adaptive Visual Architecture Map (Frontend / Backend / Shared Core Zones)
+ * driven by either an LLM/Host-Agent ArchitectureBlueprint or the 0-Token Smart Archetype Detector.
  */
 export function buildVisualProjectMap(
   index: RepoIndex,
   fileGraph?: CodeDependencyGraph,
   callGraph?: SymbolCallGraph,
-  diagnosis?: ProblemProjectionReport
+  diagnosis?: ProblemProjectionReport,
+  blueprint?: ArchitectureBlueprint
 ): VisualProjectMapPayload {
   const graph = fileGraph ?? buildCodeGraph(index);
   const calls = callGraph ?? buildSymbolCallGraph(index);
+  const arch = blueprint ?? detectSmartArchitecture(index, graph);
 
   const allNodes = Object.values(index.files);
   const supportLayers = new Set<FileLayer>(['test', 'config', 'style-asset']);
   const primaryFiles = allNodes.filter((f) => !supportLayers.has(f.layer));
   const hiddenSupportFiles = allNodes.length - primaryFiles.length;
 
-  // Pick up to 20 most structurally meaningful files (always include diagnosis target + direct impact!)
-  const pinnedPaths = new Set<string>();
-  if (diagnosis?.primaryTarget?.file.path) pinnedPaths.add(diagnosis.primaryTarget.file.path);
-  for (const d of diagnosis?.blastRadius?.directImpact ?? []) pinnedPaths.add(d.path);
-  for (const u of diagnosis?.blastRadius?.upstreamDependencies ?? []) pinnedPaths.add(u.path);
-
-  const rankedFiles = [...primaryFiles].sort((a, b) => {
-    const aPin = pinnedPaths.has(a.path) ? 1 : 0;
-    const bPin = pinnedPaths.has(b.path) ? 1 : 0;
-    if (aPin !== bPin) return bPin - aPin;
-    const aReach = graph.nodes[a.path]?.totalDownstreamReach ?? 0;
-    const bReach = graph.nodes[b.path]?.totalDownstreamReach ?? 0;
-    if (aReach !== bReach) return bReach - aReach;
-    const aDeg = (graph.nodes[a.path]?.inDegree ?? 0) + (graph.nodes[a.path]?.outDegree ?? 0);
-    const bDeg = (graph.nodes[b.path]?.inDegree ?? 0) + (graph.nodes[b.path]?.outDegree ?? 0);
-    return bDeg - aDeg || a.path.localeCompare(b.path);
-  });
-
-  const selectedFiles = rankedFiles.slice(0, 20);
-  const selectedSet = new Set(selectedFiles.map((f) => f.path));
-
-  // Diagnosis highlight sets
   const faultPath = diagnosis?.primaryTarget?.file.path;
   const directSet = new Set((diagnosis?.blastRadius?.directImpact ?? []).map((f) => f.path));
   const indirectSet = new Set((diagnosis?.blastRadius?.indirectImpact ?? []).map((f) => f.path));
   const upstreamSet = new Set((diagnosis?.blastRadius?.upstreamDependencies ?? []).map((f) => f.path));
 
-  const laneBuckets = new Map<string, string[]>();
-  for (const l of LANE_DEFS) laneBuckets.set(l.id, []);
+  // Collect all files referenced in the architecture blueprint
+  const fileToPlacement = new Map<string, { zoneId: string; laneId: string }>();
+  const selectedIds: string[] = [];
+  const zones: VisualMapZone[] = [];
 
-  // Also separate "基础共享文件" (core-logic files with outDegree === 0 and high inDegree, e.g. schema.ts) into a clean 4th foundation lane if present
-  const foundationIds: string[] = [];
-
-  const visualNodes: VisualMapNode[] = selectedFiles.map((file: IndexedFileNode) => {
-    const metrics = graph.nodes[file.path];
-    const isFoundation =
-      file.layer === 'core-logic' &&
-      (metrics?.outDegree ?? 0) === 0 &&
-      (metrics?.totalDownstreamReach ?? 0) >= 3;
-
-    let laneId = 'core-engine';
-    if (isFoundation) {
-      laneId = 'foundation';
-      foundationIds.push(file.path);
-    } else {
-      const matchedLane = LANE_DEFS.find((l) => l.layers.includes(file.layer)) ?? LANE_DEFS[2];
-      laneId = matchedLane.id;
-      laneBuckets.get(laneId)!.push(file.path);
+  for (const z of arch.zones) {
+    const lanes: VisualMapLane[] = [];
+    for (const g of z.groups) {
+      const nodeIds = g.files.filter((fp) => Boolean(index.files[fp]));
+      if (nodeIds.length === 0) continue;
+      lanes.push({
+        id: g.id,
+        title: g.title,
+        subtitle: g.subtitle,
+        nodeIds,
+      });
+      for (const fp of nodeIds) {
+        if (!fileToPlacement.has(fp)) {
+          fileToPlacement.set(fp, { zoneId: z.id, laneId: g.id });
+          selectedIds.push(fp);
+        }
+      }
     }
+    if (lanes.length > 0) {
+      zones.push({
+        id: z.id,
+        title: z.title,
+        badge: z.badge,
+        kind: z.kind,
+        lanes,
+      });
+    }
+  }
 
-    // Collect cross-file function callers for this file
+  const selectedSet = new Set(selectedIds);
+
+  const visualNodes: VisualMapNode[] = selectedIds.map((fp) => {
+    const file: IndexedFileNode = index.files[fp];
+    const metrics = graph.nodes[fp];
+    const placement = fileToPlacement.get(fp)!;
+
     const fileCallers: VisualMapNode['callers'] = [];
     for (const sym of file.symbols ?? []) {
       for (const edge of calls.incoming[sym.id] ?? []) {
@@ -208,7 +190,8 @@ export function buildVisualProjectMap(
       id: file.path,
       name: file.name,
       path: file.path,
-      laneId,
+      laneId: placement.laneId,
+      zoneId: placement.zoneId,
       roleLabel: file.roleLabel,
       summary: file.summary,
       inDegree: metrics?.inDegree ?? 0,
@@ -226,23 +209,6 @@ export function buildVisualProjectMap(
     };
   });
 
-  const lanes: VisualMapLane[] = LANE_DEFS.map((l) => ({
-    id: l.id,
-    title: l.title,
-    subtitle: l.subtitle,
-    nodeIds: laneBuckets.get(l.id) ?? [],
-  })).filter((l) => l.nodeIds.length > 0);
-
-  if (foundationIds.length > 0) {
-    lanes.push({
-      id: 'foundation',
-      title: '基础与数据定义',
-      subtitle: '多处共用的底层契约',
-      nodeIds: foundationIds,
-    });
-  }
-
-  // Build clean directed edges (from consumer -> dependency) within selected nodes
   const edges: VisualMapEdge[] = [];
   for (const node of visualNodes) {
     for (const dep of node.upstreamPaths) {
@@ -283,11 +249,16 @@ export function buildVisualProjectMap(
 
   return {
     repoName: index.repoName,
+    archetype: arch.archetype,
+    archetypeLabel: arch.archetypeLabel,
+    projectHeadline: arch.projectHeadline,
+    architectureSource: arch.source,
     totalFiles: index.stats.totalFiles,
     shownFiles: visualNodes.length,
     hiddenSupportFiles,
     scanMs: index.stats.scanMs,
-    lanes,
+    zones,
+    lanes: zones.flatMap((z) => z.lanes),
     nodes: visualNodes,
     edges,
     activeDiagnosis,

@@ -7,6 +7,7 @@ description: Use CodeSight GraphRAG tools (`codesight_map`, `codesight_ask`, `co
 
 Activate this skill whenever:
 1. The user asks how a codebase is organized or where a feature lives (`codesight_map` / `codesight_ask`).
+   - Tip: If the project has a domain-specific architecture (e.g. Frontend vs Backend vs Worker/AI Pipeline), you may pass a tailored `architectureOverride` object to `codesight_map` (`zones` with `kind: "frontend" | "backend" | "shared" | "core"`) so CodeSight renders and caches a bespoke visual architecture map with zero extra API keys.
 2. You are about to modify a shared type, schema, or utility imported across multiple modules — run `codesight_trace` first to inspect all cross-file callers.
 3. A build/runtime error occurs or you finish a multi-file Vibe Coding edit — run `codesight_diagnose` (with `rawError` or `useGit: true`) to verify blast radius and ensure zero silent regressions (`REMOVED_GUARD`, `SWALLOWED_ERROR`, `TYPE_ESCAPE_HATCH`).
 
