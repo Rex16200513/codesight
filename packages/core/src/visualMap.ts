@@ -8,14 +8,32 @@ import type { ProblemProjectionReport } from './comprehensionEngine.ts';
 import { buildSymbolCallGraph, type SymbolCallGraph } from './graphProvider.ts';
 import type { FileLayer, IndexedFileNode, RepoIndex } from './repoIndexer.ts';
 
+export type PrototypeVisualKind =
+  | 'ui-hud'
+  | 'ui-modal'
+  | 'ui-card-flow'
+  | 'ui-card-diff'
+  | 'ui-card'
+  | 'ui-page'
+  | 'api-server'
+  | 'cli-entry'
+  | 'data-schema'
+  | 'logic-pipeline';
+
 export interface VisualMapNode {
   id: string;
   name: string;
   path: string;
   laneId: string;
+  laneTitle: string;
   zoneId: string;
+  zoneTitle: string;
+  zoneKind: ZoneKind;
   roleLabel: string;
   summary: string;
+  prototypeKind: PrototypeVisualKind;
+  /** Child components or key calls inside this file (for realistic mini-prototype rendering) */
+  childComponents: string[];
   inDegree: number;
   outDegree: number;
   downstreamReach: number;
@@ -58,9 +76,7 @@ export interface VisualProjectMapPayload {
   shownFiles: number;
   hiddenSupportFiles: number;
   scanMs: number;
-  /** Semantic Architecture Zones (e.g. Frontend Zone vs Backend Zone vs Shared Core Zone) */
   zones: VisualMapZone[];
-  /** Flattened lanes for backwards compatibility */
   lanes: VisualMapLane[];
   nodes: VisualMapNode[];
   edges: VisualMapEdge[];
@@ -83,6 +99,26 @@ export interface VisualProjectMapPayload {
   };
 }
 
+function inferPrototypeKind(file: IndexedFileNode, zoneKind: ZoneKind): PrototypeVisualKind {
+  const lower = `${file.path} ${file.name}`.toLowerCase();
+
+  if (zoneKind === 'frontend' || file.ext === '.tsx' || file.ext === '.jsx' || file.ext === '.vue' || file.ext === '.svelte') {
+    if (/modal|dialog|drawer|popover|sheet|settings/.test(lower)) return 'ui-modal';
+    if (/hud|panel|overlay|dock|sidebar/.test(lower)) return 'ui-hud';
+    if (/mental|flow|map|graph|topo|diagram|timeline/.test(lower)) return 'ui-card-flow';
+    if (/ripple|diff|regression|compare|alert|error/.test(lower)) return 'ui-card-diff';
+    if (/card|widget|tile|badge|item|button|form/.test(lower)) return 'ui-card';
+    return 'ui-page';
+  }
+
+  if (/schema|types?|contract|model|dto/.test(lower)) return 'data-schema';
+  if (/cli|install|script|bin/.test(lower)) return 'cli-entry';
+  if (zoneKind === 'backend' || /server|api|route|bridge|mcp|sidecar|controller/.test(lower)) {
+    return 'api-server';
+  }
+  return 'logic-pipeline';
+}
+
 function collectTransitiveDownstream(
   startPath: string,
   graph: CodeDependencyGraph
@@ -101,8 +137,7 @@ function collectTransitiveDownstream(
 }
 
 /**
- * Builds a Project-Adaptive Visual Architecture Map (Frontend / Backend / Shared Core Zones)
- * driven by either an LLM/Host-Agent ArchitectureBlueprint or the 0-Token Smart Archetype Detector.
+ * Builds a Vertical-Column Project Architecture Board payload with real AST-backed prototype metadata.
  */
 export function buildVisualProjectMap(
   index: RepoIndex,
@@ -125,8 +160,10 @@ export function buildVisualProjectMap(
   const indirectSet = new Set((diagnosis?.blastRadius?.indirectImpact ?? []).map((f) => f.path));
   const upstreamSet = new Set((diagnosis?.blastRadius?.upstreamDependencies ?? []).map((f) => f.path));
 
-  // Collect all files referenced in the architecture blueprint
-  const fileToPlacement = new Map<string, { zoneId: string; laneId: string }>();
+  const fileToPlacement = new Map<
+    string,
+    { zoneId: string; zoneTitle: string; zoneKind: ZoneKind; laneId: string; laneTitle: string }
+  >();
   const selectedIds: string[] = [];
   const zones: VisualMapZone[] = [];
 
@@ -143,7 +180,13 @@ export function buildVisualProjectMap(
       });
       for (const fp of nodeIds) {
         if (!fileToPlacement.has(fp)) {
-          fileToPlacement.set(fp, { zoneId: z.id, laneId: g.id });
+          fileToPlacement.set(fp, {
+            zoneId: z.id,
+            zoneTitle: z.title,
+            zoneKind: z.kind,
+            laneId: g.id,
+            laneTitle: g.title,
+          });
           selectedIds.push(fp);
         }
       }
@@ -167,7 +210,11 @@ export function buildVisualProjectMap(
     const placement = fileToPlacement.get(fp)!;
 
     const fileCallers: VisualMapNode['callers'] = [];
+    const childCompSet = new Set<string>();
     for (const sym of file.symbols ?? []) {
+      for (const c of sym.calls) {
+        if (/^[A-Z]/.test(c)) childCompSet.add(c);
+      }
       for (const edge of calls.incoming[sym.id] ?? []) {
         if (edge.callerFile !== file.path) {
           fileCallers.push({
@@ -191,14 +238,19 @@ export function buildVisualProjectMap(
       name: file.name,
       path: file.path,
       laneId: placement.laneId,
+      laneTitle: placement.laneTitle,
       zoneId: placement.zoneId,
+      zoneTitle: placement.zoneTitle,
+      zoneKind: placement.zoneKind,
       roleLabel: file.roleLabel,
       summary: file.summary,
+      prototypeKind: inferPrototypeKind(file, placement.zoneKind),
+      childComponents: Array.from(childCompSet).slice(0, 4),
       inDegree: metrics?.inDegree ?? 0,
       outDegree: metrics?.outDegree ?? 0,
       downstreamReach: metrics?.totalDownstreamReach ?? 0,
       isHub: metrics?.isHub ?? false,
-      exports: file.exports.slice(0, 5),
+      exports: file.exports.slice(0, 6),
       upstreamPaths: (metrics?.dependsOn ?? []).filter((p) => selectedSet.has(p)),
       directDownstreamPaths: (metrics?.dependedBy ?? []).filter((p) => selectedSet.has(p)),
       allDownstreamPaths: collectTransitiveDownstream(file.path, graph).filter((p) =>
