@@ -868,15 +868,19 @@ export function renderVisualProjectMapHtml(
 
     const LANE_EN = {
       '页面与入口': 'Pages & Entry',
+      '扩展入口': 'Extension Entry',
       '界面组件': 'UI Components',
+      '界面功能模块': 'UI & Features',
       '页面与组件': 'Pages & UI',
       '服务与插件': 'Services & MCP',
+      '本地服务层': 'Local Services',
       '命令与工具入口': 'CLI & Tools',
       '核心引擎': 'Core Engine',
       '核心逻辑': 'Core Logic',
       '核心分析引擎': 'Analysis Engine',
       '基础数据定义': 'Shared Types',
       '基础与数据定义': 'Shared Types',
+      'DOM 工具与数据定义': 'DOM & Types',
       '数据与协议': 'Schemas',
       '功能模块': 'Modules',
       '业务模块': 'Modules',
@@ -890,7 +894,15 @@ export function renderVisualProjectMapHtml(
     const ROLE_EN = {
       '主页面': 'App Entry',
       '悬浮窗主界面': 'Floating HUD',
+      '弹窗界面': 'Modal UI',
+      '侧边栏 / 悬浮界面': 'Sidebar / Panel',
+      '交互画板 / 功能面板': 'Interactive Board',
+      '页面注入入口': 'Content Script',
+      '扩展后台脚本': 'Background Worker',
+      '设置页入口': 'Options Page',
+      '弹窗页入口': 'Popup Page',
       '界面卡片': 'UI Card',
+      '界面组件': 'UI Component',
       '插件通信接口': 'MCP Interface',
       '本地后台服务': 'Local Service',
       '代码分析核心': 'Analysis Core',
@@ -1022,6 +1034,10 @@ export function renderVisualProjectMapHtml(
     }
 
     function nodeSummary(node) {
+      if (node.prototypeSpec) {
+        if (isEn() && node.prototypeSpec.visualSummaryEn) return node.prototypeSpec.visualSummaryEn;
+        if (!isEn() && node.prototypeSpec.visualSummary) return node.prototypeSpec.visualSummary;
+      }
       if (!isEn()) return node.summary;
       if (node.summary && !/[\\u4e00-\\u9fa5]/.test(node.summary)) return node.summary;
       const role = nodeRole(node);
@@ -1103,6 +1119,26 @@ export function renderVisualProjectMapHtml(
 
     function renderPrototypeSvg(node) {
       const k = node.prototypeKind;
+      const spec = node.prototypeSpec;
+      if (spec && Array.isArray(spec.elements) && spec.elements.length > 0) {
+        const els = spec.elements.slice(0, 4);
+        const isModal = k === 'ui-modal';
+        const frame = isModal
+          ? '<rect x="4" y="4" width="152" height="88" rx="8" fill="var(--cs-bg)" stroke="var(--cs-hairline)"/>' +
+            '<rect x="18" y="12" width="124" height="72" rx="8" fill="var(--cs-card)" stroke="var(--cs-blue)" stroke-width="1.2"/>'
+          : '<rect x="6" y="6" width="148" height="84" rx="9" fill="var(--cs-card)" stroke="var(--cs-blue)" stroke-width="1.15"/>';
+        const xBase = isModal ? 26 : 16;
+        const wBase = isModal ? 108 : 128;
+        const rows = els.map((lbl, idx) => {
+          const y = (isModal ? 20 : 16) + idx * 15;
+          const isLast = idx === els.length - 1;
+          const fill = isLast ? 'var(--cs-blue-soft)' : 'var(--cs-canvas)';
+          const textColor = isLast ? 'var(--cs-blue)' : 'var(--cs-ink)';
+          return '<rect x="' + xBase + '" y="' + y + '" width="' + wBase + '" height="12" rx="3.5" fill="' + fill + '"/>' +
+            '<text x="' + (xBase + 6) + '" y="' + (y + 8.8) + '" font-size="7.2" fill="' + textColor + '">' + escHtml(String(lbl).slice(0, 14)) + '</text>';
+        }).join('');
+        return '<svg viewBox="0 0 160 96" width="144">' + frame + rows + '</svg>';
+      }
       if (k === 'ui-modal') {
         return '<svg viewBox="0 0 160 96" width="144">' +
           '<rect x="4" y="4" width="152" height="88" rx="8" fill="var(--cs-bg)" stroke="var(--cs-hairline-strong)"/>' +

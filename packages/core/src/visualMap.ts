@@ -1,6 +1,7 @@
 import {
   detectSmartArchitecture,
   type ArchitectureBlueprint,
+  type UiPrototypeSpec,
   type ZoneKind,
 } from './architecturePlanner.ts';
 import { buildCodeGraph, type CodeDependencyGraph } from './codeGraph.ts';
@@ -32,6 +33,8 @@ export interface VisualMapNode {
   roleLabel: string;
   summary: string;
   prototypeKind: PrototypeVisualKind;
+  /** Optional LLM or Host-Agent curated visual prototype specification */
+  prototypeSpec?: UiPrototypeSpec;
   /** Child components or key calls inside this file (for realistic mini-prototype rendering) */
   childComponents: string[];
   inDegree: number;
@@ -105,18 +108,25 @@ export interface VisualProjectMapPayload {
 function inferPrototypeKind(file: IndexedFileNode, zoneKind: ZoneKind): PrototypeVisualKind {
   const lower = `${file.path} ${file.name}`.toLowerCase();
 
-  if (zoneKind === 'frontend' || file.ext === '.tsx' || file.ext === '.jsx' || file.ext === '.vue' || file.ext === '.svelte') {
-    if (/modal|dialog|drawer|popover|sheet|settings/.test(lower)) return 'ui-modal';
-    if (/hud|panel|overlay|dock|sidebar/.test(lower)) return 'ui-hud';
-    if (/mental|flow|map|graph|topo|diagram|timeline/.test(lower)) return 'ui-card-flow';
-    if (/ripple|diff|regression|compare|alert|error/.test(lower)) return 'ui-card-diff';
-    if (/card|widget|tile|badge|item|button|form/.test(lower)) return 'ui-card';
+  if (
+    zoneKind === 'frontend' ||
+    file.layer === 'ui-component' ||
+    file.ext === '.tsx' ||
+    file.ext === '.jsx' ||
+    file.ext === '.vue' ||
+    file.ext === '.svelte'
+  ) {
+    if (/modal|dialog|drawer|popover|sheet|options|settings|studio/.test(lower)) return 'ui-modal';
+    if (/hud|panel|overlay|dock|sidebar|launcher|toolhub/.test(lower)) return 'ui-hud';
+    if (/mental|flow|map|graph|topo|diagram|timeline|board|customizer/.test(lower)) return 'ui-card-flow';
+    if (/ripple|diff|regression|compare|alert|error|highlight/.test(lower)) return 'ui-card-diff';
+    if (/card|widget|tile|badge|item|button|form|folder|export|latex/.test(lower)) return 'ui-card';
     return 'ui-page';
   }
 
   if (/schema|types?|contract|model|dto/.test(lower)) return 'data-schema';
   if (/cli|install|script|bin/.test(lower)) return 'cli-entry';
-  if (zoneKind === 'backend' || /server|api|route|bridge|mcp|sidecar|controller/.test(lower)) {
+  if (zoneKind === 'backend' || /server|api|route|bridge|mcp|sidecar|controller|service|lifecycle|storage/.test(lower)) {
     return 'api-server';
   }
   return 'logic-pipeline';
@@ -247,7 +257,8 @@ export function buildVisualProjectMap(
       zoneKind: placement.zoneKind,
       roleLabel: file.roleLabel,
       summary: file.summary,
-      prototypeKind: inferPrototypeKind(file, placement.zoneKind),
+      prototypeKind: arch.prototypes?.[file.path]?.kind ?? inferPrototypeKind(file, placement.zoneKind),
+      prototypeSpec: arch.prototypes?.[file.path],
       childComponents: Array.from(childCompSet).slice(0, 4),
       inDegree: metrics?.inDegree ?? 0,
       outDegree: metrics?.outDegree ?? 0,

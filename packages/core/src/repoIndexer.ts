@@ -75,6 +75,9 @@ const IGNORED_DIRS = new Set([
   '__pycache__',
   '.venv',
   'venv',
+  'archive',
+  'archives',
+  'releases',
 ]);
 
 const SUPPORTED_EXTS = new Set([
@@ -270,13 +273,14 @@ function resolveImportToRepoFile(
 function inferLayerAndRole(
   relPath: string,
   exports: string[],
-  leadingDoc?: string
+  leadingDoc?: string,
+  content?: string
 ): { layer: FileLayer; roleLabel: string; summary: string } {
   const lower = relPath.toLowerCase();
   const base = path.posix.basename(relPath);
   const topExports = exports.slice(0, 3).join('、');
 
-  if (/\.(test|spec)\.[tj]sx?$/.test(lower)) {
+  if (/\.(test|spec)\.[tj]sx?$/.test(lower) || /(^|\/)(tests?|__tests__)\//.test(lower)) {
     return {
       layer: 'test',
       roleLabel: '测试文件',
@@ -300,6 +304,30 @@ function inferLayerAndRole(
     };
   }
 
+  // Browser extension / multi-page entrypoints (before generic index.ts check!)
+  if (/(^|\/)pages\/background\/index\.[tj]sx?$/i.test(lower)) {
+    return {
+      layer: 'server-api',
+      roleLabel: '扩展后台脚本',
+      summary: `浏览器扩展的后台常驻脚本，负责响应扩展事件与跨页面通信。`,
+    };
+  }
+  if (/(^|\/)pages\/content\/index\.[tj]sx?$/i.test(lower)) {
+    return {
+      layer: 'entrypoint',
+      roleLabel: '页面注入入口',
+      summary: `注入到目标网页的主入口，负责初始化所有功能模块与界面组件。`,
+    };
+  }
+  if (/(^|\/)pages\/(options|popup)\/index\.[tj]sx?$/i.test(lower)) {
+    const isOpt = lower.includes('/options/');
+    return {
+      layer: 'entrypoint',
+      roleLabel: isOpt ? '设置页入口' : '弹窗页入口',
+      summary: isOpt ? `扩展设置页面的启动与交互入口。` : `扩展顶部图标弹窗的界面入口。`,
+    };
+  }
+
   if (base === 'main.tsx' || base === 'main.ts' || base === 'cli.ts' || lower.includes('scripts/')) {
     return {
       layer: 'entrypoint',
@@ -318,16 +346,33 @@ function inferLayerAndRole(
     };
   }
 
-  if (lower.endsWith('.tsx') || lower.endsWith('.jsx') || lower.includes('/components/')) {
+  const hasDomUi =
+    Boolean(content && /\b(document\.createElement|innerHTML|attachShadow|insertAdjacentHTML|querySelector)\b/.test(content)) &&
+    !/(^|\/)core\/(utils|services|types)\//.test(lower);
+  const hasUiFileName = /(modal|dialog|drawer|sidebar|board|panel|hud|toolbar|launcher|customizer|highlighter|toolhub|popover|toast)/i.test(base);
+
+  if (lower.endsWith('.tsx') || lower.endsWith('.jsx') || lower.includes('/components/') || hasUiFileName || hasDomUi) {
     const isApp = base === 'App.tsx' || base === 'App.jsx';
-    const isHUD = lower.includes('hud');
+    const isModal = /modal|dialog|drawer|sheet/i.test(base);
+    const isSidebar = /sidebar|hud|panel|launcher/i.test(base);
+    const isBoard = /board|customizer|toolhub|highlighter/i.test(base);
     return {
       layer: isApp ? 'entrypoint' : 'ui-component',
-      roleLabel: isApp ? '主页面' : isHUD ? '悬浮窗主界面' : '界面卡片',
+      roleLabel: isApp
+        ? '主页面'
+        : isModal
+        ? '弹窗界面'
+        : isSidebar
+        ? '侧边栏 / 悬浮界面'
+        : isBoard
+        ? '交互画板 / 功能面板'
+        : '界面组件',
       summary: isApp
         ? `前端的主页面，负责管理状态并把各个界面组件拼在一起。`
+        : leadingDoc
+        ? leadingDoc.slice(0, 90)
         : topExports
-        ? `负责展示 ${topExports} 对应的页面内容和按钮交互。`
+        ? `负责渲染与控制 ${topExports} 对应的界面交互。`
         : `负责展示局部界面内容和点击交互。`,
     };
   }
@@ -480,7 +525,8 @@ export function buildOrUpdateRepoIndex(
     const { layer, roleLabel, summary } = inferLayerAndRole(
       relPath,
       parsedAst.exports,
-      parsedAst.leadingDoc
+      parsedAst.leadingDoc,
+      content
     );
     const keywords = extractKeywords(relPath, parsedAst.exports, parsedAst.symbols, summary);
 

@@ -5,9 +5,33 @@ import type { CodeDependencyGraph } from './codeGraph.ts';
 import type { IndexedFileNode, RepoIndex } from './repoIndexer.ts';
 import type { LLMConfig } from './schema.ts';
 
-export type ProjectArchetype = 'fullstack' | 'frontend' | 'backend' | 'monorepo-platform' | 'library';
+export type ProjectArchetype =
+  | 'fullstack'
+  | 'frontend'
+  | 'backend'
+  | 'browser-extension'
+  | 'monorepo-platform'
+  | 'library';
 
 export type ZoneKind = 'frontend' | 'backend' | 'shared' | 'core';
+
+export interface UiPrototypeSpec {
+  kind:
+    | 'ui-hud'
+    | 'ui-modal'
+    | 'ui-card-flow'
+    | 'ui-card-diff'
+    | 'ui-card'
+    | 'ui-page'
+    | 'api-server'
+    | 'cli-entry'
+    | 'data-schema'
+    | 'logic-pipeline';
+  visualSummary: string;
+  visualSummaryEn?: string;
+  /** Up to 4 concise real UI element labels (e.g. ["Preset Tabs", "Width Slider", "Save"]) */
+  elements?: string[];
+}
 
 export interface ArchitectureGroup {
   id: string;
@@ -33,6 +57,8 @@ export interface ArchitectureBlueprint {
   source: 'llm-cached' | 'host-agent' | 'smart-heuristic';
   modelName?: string;
   zones: ArchitectureZone[];
+  /** Optional LLM or Host-Agent curated visual prototype specs keyed by repo file path */
+  prototypes?: Record<string, UiPrototypeSpec>;
 }
 
 export interface HostArchitectureOverride {
@@ -51,6 +77,7 @@ export interface HostArchitectureOverride {
       files: string[];
     }>;
   }>;
+  prototypes?: Record<string, UiPrototypeSpec>;
 }
 
 function computeStructureHash(files: IndexedFileNode[]): string {
@@ -89,10 +116,22 @@ function isSharedFoundationFile(f: IndexedFileNode, graph: CodeDependencyGraph):
   return false;
 }
 
+function isBrowserExtensionRepo(index: RepoIndex, allFiles: IndexedFileNode[]): boolean {
+  const hasManifest =
+    fs.existsSync(path.join(index.rootDir, 'manifest.json')) ||
+    fs.existsSync(path.join(index.rootDir, 'chrome/manifest.json')) ||
+    fs.existsSync(path.join(index.rootDir, 'edge/manifest.json')) ||
+    fs.existsSync(path.join(index.rootDir, 'public/manifest.json'));
+  const hasExtPages =
+    allFiles.some((f) => /pages\/content\//i.test(f.path)) &&
+    allFiles.some((f) => /pages\/(background|options|popup)\//i.test(f.path));
+  return hasManifest || hasExtPages;
+}
+
 /**
  * 0-Token Adaptive Project Archetype Detector:
- * Automatically recognizes Full-Stack (Frontend + Backend separation), Pure Frontend,
- * Pure Backend, or Modular Platform repositories and builds meaningful layered zones.
+ * Automatically recognizes Browser Extensions, Full-Stack (Frontend + Backend separation),
+ * Pure Frontend, Pure Backend, or Modular Platform repositories and builds meaningful layered zones.
  */
 export function detectSmartArchitecture(
   index: RepoIndex,
@@ -102,6 +141,88 @@ export function detectSmartArchitecture(
     (f) => f.layer !== 'test' && f.layer !== 'config' && f.layer !== 'style-asset'
   );
   const structureHash = computeStructureHash(allFiles);
+  const sortByImpact = (arr: IndexedFileNode[]) =>
+    [...arr].sort(
+      (a, b) =>
+        (graph.nodes[b.path]?.totalDownstreamReach ?? 0) -
+          (graph.nodes[a.path]?.totalDownstreamReach ?? 0) ||
+        a.path.localeCompare(b.path)
+    );
+
+  // Case 0: Browser Extension (Chrome / Edge / Firefox)
+  if (isBrowserExtensionRepo(index, allFiles)) {
+    const extEntries = sortByImpact(allFiles.filter((f) => /(^|\/)pages\//i.test(f.path)));
+    const featureUi = sortByImpact(
+      allFiles.filter(
+        (f) =>
+          !extEntries.includes(f) &&
+          (/(^|\/)features\//i.test(f.path) || f.layer === 'ui-component')
+      )
+    );
+    const runtimeServices = sortByImpact(
+      allFiles.filter(
+        (f) =>
+          !extEntries.includes(f) &&
+          !featureUi.includes(f) &&
+          /(^|\/)services\//i.test(f.path)
+      )
+    );
+    const coreUtilsAndTypes = sortByImpact(
+      allFiles.filter(
+        (f) => !extEntries.includes(f) && !featureUi.includes(f) && !runtimeServices.includes(f)
+      )
+    );
+
+    const rawZones: ArchitectureZone[] = [
+      {
+        id: 'zone-ext-ui',
+        title: '界面与功能 · UI & Features',
+        badge: 'UI & Features',
+        kind: 'frontend',
+        groups: [
+          ...(extEntries.length > 0
+            ? [{ id: 'ext-entry', title: '扩展入口', subtitle: '注入脚本、后台与设置页', files: extEntries.map((f) => f.path) }]
+            : []),
+          ...(featureUi.length > 0
+            ? [{ id: 'ext-features', title: '界面功能模块', subtitle: '弹窗、侧边栏与交互面板', files: featureUi.map((f) => f.path) }]
+            : []),
+        ],
+      },
+      {
+        id: 'zone-ext-services',
+        title: '状态与生命周期 · Services',
+        badge: 'Services',
+        kind: 'backend',
+        groups: [
+          ...(runtimeServices.length > 0
+            ? [{ id: 'ext-srv', title: '本地服务层', subtitle: '存储、配置与页面生命周期', files: runtimeServices.map((f) => f.path) }]
+            : []),
+        ],
+      },
+      {
+        id: 'zone-ext-core',
+        title: '底层工具与类型 · Core',
+        badge: 'Core & Types',
+        kind: 'shared',
+        groups: [
+          ...(coreUtilsAndTypes.length > 0
+            ? [{ id: 'ext-core', title: 'DOM 工具与数据定义', subtitle: '全项目共用基础能力', files: coreUtilsAndTypes.map((f) => f.path) }]
+            : []),
+        ],
+      },
+    ];
+    const zones = rawZones.filter((z) => z.groups.length > 0);
+
+    return {
+      schemaVersion: '1.0',
+      structureHash,
+      archetype: 'browser-extension',
+      archetypeLabel: '浏览器扩展架构',
+      projectHeadline: `${index.repoName} 是浏览器扩展项目，按扩展入口与界面功能、本地服务、底层工具三层划分`,
+      source: 'smart-heuristic',
+      zones,
+    };
+  }
 
   const frontendFiles: IndexedFileNode[] = [];
   const backendFiles: IndexedFileNode[] = [];
@@ -122,13 +243,6 @@ export function detectSmartArchitecture(
 
   const hasFrontend = frontendFiles.length > 0;
   const hasBackend = backendFiles.length > 0;
-  const sortByImpact = (arr: IndexedFileNode[]) =>
-    [...arr].sort(
-      (a, b) =>
-        (graph.nodes[b.path]?.totalDownstreamReach ?? 0) -
-          (graph.nodes[a.path]?.totalDownstreamReach ?? 0) ||
-        a.path.localeCompare(b.path)
-    );
 
   // Case 1: Full-Stack / Frontend + Backend Separated Project
   if (hasFrontend && hasBackend) {
@@ -345,6 +459,23 @@ export function normalizeArchitectureBlueprint(
     });
   }
 
+  const normalizedPrototypes: Record<string, UiPrototypeSpec> = {};
+  if (override.prototypes && typeof override.prototypes === 'object') {
+    for (const [rawKey, spec] of Object.entries(override.prototypes)) {
+      const hit = resolveFileRef(rawKey);
+      if (hit && spec && typeof spec === 'object' && spec.kind && spec.visualSummary) {
+        normalizedPrototypes[hit] = {
+          kind: spec.kind,
+          visualSummary: String(spec.visualSummary).slice(0, 140),
+          visualSummaryEn: spec.visualSummaryEn ? String(spec.visualSummaryEn).slice(0, 140) : undefined,
+          elements: Array.isArray(spec.elements)
+            ? spec.elements.map((e) => String(e).slice(0, 20)).slice(0, 4)
+            : undefined,
+        };
+      }
+    }
+  }
+
   return {
     schemaVersion: '1.0',
     structureHash: computeStructureHash(validFiles),
@@ -354,6 +485,7 @@ export function normalizeArchitectureBlueprint(
     source,
     modelName,
     zones,
+    ...(Object.keys(normalizedPrototypes).length > 0 ? { prototypes: normalizedPrototypes } : {}),
   };
 }
 
@@ -440,7 +572,7 @@ export async function resolveProjectArchitecture(
             {
               role: 'system',
               content:
-                'You are an expert software architect. Given a compact list of repo files, classify the project into 2-3 clear high-level zones (such as Frontend vs Backend vs Shared Core, or whatever fits this repo best) with concise plain-Chinese titles (no jargon, no emoji). Return ONLY JSON: {"archetype":"fullstack|frontend|backend|monorepo-platform|library","archetypeLabel":"...","projectHeadline":"...","zones":[{"title":"...","badge":"Frontend|Backend|Core","kind":"frontend|backend|shared|core","groups":[{"title":"...","subtitle":"...","files":["exact/path.ts"]}]}]}',
+                'You are an expert software architect and UI analyst. Given a compact list of repo files, classify the project into 2-3 clear high-level zones (e.g. Frontend / Backend / Shared, or Extension UI / Services / Core) with plain-Chinese titles (no jargon, no emoji). For UI files (pages, modals, sidebars, panels, boards, cards), ALSO return a `prototypes` map describing what the user actually sees on screen with 2-4 concise UI element labels. Return ONLY JSON: {"archetype":"fullstack|frontend|backend|browser-extension|monorepo-platform|library","archetypeLabel":"...","projectHeadline":"...","zones":[{"title":"...","badge":"Frontend|Backend|Core","kind":"frontend|backend|shared|core","groups":[{"title":"...","subtitle":"...","files":["exact/path.ts"]}]}],"prototypes":{"exact/ui-file.ts":{"kind":"ui-modal|ui-hud|ui-card-flow|ui-card-diff|ui-card|ui-page","visualSummary":"1 concise Chinese sentence of what this UI renders","visualSummaryEn":"1 concise English sentence","elements":["Header","Toggle","Slider","Save"]}}}',
             },
             {
               role: 'user',
