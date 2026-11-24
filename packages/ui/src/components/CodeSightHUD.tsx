@@ -137,13 +137,35 @@ export function CodeSightHUD({
 
   const handleCopyPrompt = async () => {
     onDispatchPrompt?.(surgicalPrompt);
+    let ok = false;
     try {
-      await navigator.clipboard.writeText(surgicalPrompt);
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(surgicalPrompt);
+        ok = true;
+      }
     } catch {
-      // ignore restricted clipboard
+      ok = false;
     }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    if (!ok) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = surgicalPrompt;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch {
+        ok = false;
+      }
+    }
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    }
   };
 
   const issueCount = bundle.cards.filter((c) => c.kind !== 'mental_model').length;

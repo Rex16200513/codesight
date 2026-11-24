@@ -691,6 +691,35 @@ const APPLE_CSS = `
   }
   .cs-btn-ghost:hover { border-color: var(--cs-ink); }
 
+  /* Fallback Selectable Prompt Box (auto-shown if host iframe blocks programmatic clipboard) */
+  .cs-prompt-box {
+    display: none;
+    flex-direction: column;
+    gap: 5px;
+    padding-top: 4px;
+  }
+  .cs-prompt-box.is-open { display: flex; }
+  .cs-prompt-tip {
+    font-size: 11px;
+    color: var(--cs-muted);
+    display: flex;
+    justify-content: space-between;
+  }
+  .cs-prompt-ta {
+    width: 100%;
+    min-height: 62px;
+    resize: vertical;
+    border: 1px solid var(--cs-blue);
+    border-radius: 9px;
+    background: var(--cs-card);
+    color: var(--cs-ink);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    line-height: 1.45;
+    padding: 8px 10px;
+    outline: none;
+  }
+
   /* Error-only Fix Choices */
   .cs-choices {
     display: grid;
@@ -893,6 +922,8 @@ export function renderVisualProjectMapHtml(
         explainBtn: '讲解代码',
         copyFix: '复制修复指令',
         copied: '已复制给 AI',
+        pressCopy: '已选中，按 ⌘C / Ctrl+C 复制',
+        promptHint: '环境限制自动剪贴板，已为你全选下方指令：',
         settings: '设置',
         langLbl: '语言',
         linesLbl: '关联虚线',
@@ -927,6 +958,8 @@ export function renderVisualProjectMapHtml(
         explainBtn: 'Explain',
         copyFix: 'Copy fix prompt',
         copied: 'Copied for AI',
+        pressCopy: 'Selected — press ⌘C / Ctrl+C',
+        promptHint: 'Clipboard restricted by host — prompt selected below:',
         settings: 'Settings',
         langLbl: 'Language',
         linesLbl: 'Flow lines',
@@ -1009,6 +1042,55 @@ export function renderVisualProjectMapHtml(
       if (!DATA.activeDiagnosis) return '';
       if (isEn()) return DATA.activeDiagnosis.headlineEn || DATA.activeDiagnosis.headline;
       return DATA.activeDiagnosis.headline;
+    }
+
+    function execCopyFallback(text) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.style.left = '-9999px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, text.length);
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return Boolean(ok);
+      } catch {
+        return false;
+      }
+    }
+
+    async function copyTextReliable(text) {
+      // Inside sandboxed iframes or file://, synchronous execCommand preserves user activation reliably
+      const inIframe = (() => { try { return window.self !== window.top; } catch { return true; } })();
+      if (inIframe || !window.isSecureContext) {
+        if (execCopyFallback(text)) return true;
+      }
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try {
+          await navigator.clipboard.writeText(text);
+          return true;
+        } catch {}
+      }
+      return execCopyFallback(text);
+    }
+
+    function showPromptBox(text, copiedOk) {
+      const box = document.getElementById('cs-prompt-box');
+      const ta = document.getElementById('cs-prompt-ta');
+      const tip = document.getElementById('cs-prompt-tip');
+      if (!box || !ta) return;
+      ta.value = text;
+      box.classList.add('is-open');
+      if (tip) tip.textContent = copiedOk ? tr().copied : tr().promptHint;
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, text.length);
     }
 
     function setCollapsed(next) {
@@ -1388,7 +1470,13 @@ export function renderVisualProjectMapHtml(
             '<div class="cs-link-row"><span class="cs-link-lbl">' + t.usedBy + '</span>' + downChips + '</div>' +
           '</div>' +
         '</div>' +
-        '<div class="cs-sheet-foot">' + footHtml + '</div>';
+        '<div class="cs-sheet-foot">' +
+          footHtml +
+          '<div class="cs-prompt-box" id="cs-prompt-box">' +
+            '<div class="cs-prompt-tip" id="cs-prompt-tip"></div>' +
+            '<textarea class="cs-prompt-ta" id="cs-prompt-ta" readonly></textarea>' +
+          '</div>' +
+        '</div>';
 
       backdropEl.classList.add('is-open');
 
@@ -1400,11 +1488,17 @@ export function renderVisualProjectMapHtml(
       const wireCopy = (btn, promptText) => {
         if (!btn) return;
         btn.addEventListener('click', async () => {
-          try { await navigator.clipboard.writeText(promptText); } catch {}
+          const ok = await copyTextReliable(promptText);
           window.parent?.postMessage({ type: 'codesight:actionPrompt', nodeId: node.id, prompt: promptText }, '*');
-          const old = btn.textContent;
-          btn.textContent = t.copied;
-          setTimeout(() => { btn.textContent = old; }, 1400);
+          const old = btn.dataset.origLabel || btn.textContent;
+          btn.dataset.origLabel = old;
+          if (ok) {
+            btn.textContent = t.copied;
+            setTimeout(() => { btn.textContent = old; }, 1600);
+          } else {
+            btn.textContent = t.pressCopy;
+            showPromptBox(promptText, false);
+          }
         });
       };
 
@@ -1413,11 +1507,17 @@ export function renderVisualProjectMapHtml(
         fixBtn?.addEventListener('click', async () => {
           const checked = sheetEl.querySelector('input[name="cs_dir"]:checked');
           const chosen = DATA.activeDiagnosis.directions.find(d => d.id === checked?.value) || DATA.activeDiagnosis.directions[0];
-          try { await navigator.clipboard.writeText(chosen.surgicalPrompt); } catch {}
+          const ok = await copyTextReliable(chosen.surgicalPrompt);
           window.parent?.postMessage({ type: 'codesight:actionPrompt', nodeId: node.id, prompt: chosen.surgicalPrompt }, '*');
-          const old = fixBtn.textContent;
-          fixBtn.textContent = t.copied;
-          setTimeout(() => { fixBtn.textContent = old; }, 1400);
+          const old = fixBtn.dataset.origLabel || fixBtn.textContent;
+          fixBtn.dataset.origLabel = old;
+          if (ok) {
+            fixBtn.textContent = t.copied;
+            setTimeout(() => { fixBtn.textContent = old; }, 1600);
+          } else {
+            fixBtn.textContent = t.pressCopy;
+            showPromptBox(chosen.surgicalPrompt, false);
+          }
         });
       } else {
         const editPrompt = callers >= 5
@@ -1485,6 +1585,10 @@ export function renderVisualProjectMapHtml(
         '</div>' +
         '<div class="cs-sheet-foot">' +
           '<button type="button" class="cs-btn-primary" id="cs-save-settings">' + t.saveBtn + '</button>' +
+          '<div class="cs-prompt-box" id="cs-prompt-box">' +
+            '<div class="cs-prompt-tip" id="cs-prompt-tip"></div>' +
+            '<textarea class="cs-prompt-ta" id="cs-prompt-ta" readonly></textarea>' +
+          '</div>' +
         '</div>';
 
       backdropEl.classList.add('is-open');
@@ -1541,12 +1645,20 @@ export function renderVisualProjectMapHtml(
         }
 
         window.parent?.postMessage({ type: 'codesight:saveSettings', patch }, '*');
-        if (!persistedViaApi) {
+        if (persistedViaApi) {
+          saveBtn.textContent = t.saved;
+          setTimeout(() => { saveBtn.textContent = t.saveBtn; }, 1400);
+        } else {
           const syncCmd = 'Call codesight_settings with action="set" and ' + JSON.stringify(patch);
-          try { await navigator.clipboard.writeText(syncCmd); } catch {}
+          const ok = await copyTextReliable(syncCmd);
+          if (ok) {
+            saveBtn.textContent = t.savedCopy;
+            setTimeout(() => { saveBtn.textContent = t.saveBtn; }, 1600);
+          } else {
+            saveBtn.textContent = t.pressCopy;
+            showPromptBox(syncCmd, false);
+          }
         }
-        saveBtn.textContent = persistedViaApi ? t.saved : t.savedCopy;
-        setTimeout(() => { saveBtn.textContent = t.saveBtn; }, 1400);
       });
     }
 
