@@ -24,39 +24,43 @@ function esc(str: string): string {
  *    - Impact summary + clickable related file jumps + 1-click AI Fix/Adjustment Prompt!
  */
 const BOARD_CSS = `
-  .cs-board {
+  .cs-board,
+  .cs-modal-backdrop {
     --cs-card: var(--card, #ffffff);
-    --cs-surface: var(--muted, rgba(120, 118, 114, 0.055));
+    --cs-surface: var(--muted, #f4f3ef);
     --cs-ink: var(--foreground, #1c1917);
     --cs-muted: var(--muted-foreground, #6b6560);
-    --cs-border: var(--border, rgba(28, 25, 23, 0.1));
+    --cs-border: var(--border, rgba(28, 25, 23, 0.12));
     --cs-border-strong: rgba(28, 25, 23, 0.22);
     --cs-accent: var(--primary, #111827);
     --cs-accent-fg: var(--primary-foreground, #ffffff);
     --cs-blue: #2563eb;
-    --cs-blue-soft: rgba(37, 99, 235, 0.09);
+    --cs-blue-soft: rgba(37, 99, 235, 0.1);
     --cs-violet: #7c3aed;
-    --cs-violet-soft: rgba(124, 58, 237, 0.09);
+    --cs-violet-soft: rgba(124, 58, 237, 0.1);
     --cs-red: #dc2626;
-    --cs-red-soft: rgba(220, 38, 38, 0.11);
+    --cs-red-soft: rgba(220, 38, 38, 0.12);
     --cs-amber: #d97706;
-    --cs-amber-soft: rgba(217, 119, 6, 0.11);
+    --cs-amber-soft: rgba(217, 119, 6, 0.12);
     --cs-green: #059669;
-    --cs-green-soft: rgba(5, 150, 105, 0.1);
+    --cs-green-soft: rgba(5, 150, 105, 0.11);
   }
   @media (prefers-color-scheme: dark) {
-    .cs-board {
+    .cs-board,
+    .cs-modal-backdrop {
+      --cs-card: var(--card, #242426);
+      --cs-surface: var(--muted, #1c1c1e);
       --cs-border-strong: rgba(255, 255, 255, 0.22);
       --cs-blue: #60a5fa;
-      --cs-blue-soft: rgba(96, 165, 250, 0.15);
+      --cs-blue-soft: rgba(96, 165, 250, 0.16);
       --cs-violet: #a78bfa;
-      --cs-violet-soft: rgba(167, 139, 250, 0.15);
+      --cs-violet-soft: rgba(167, 139, 250, 0.16);
       --cs-red: #f87171;
       --cs-red-soft: rgba(248, 113, 113, 0.17);
       --cs-amber: #fbbf24;
       --cs-amber-soft: rgba(251, 191, 36, 0.15);
       --cs-green: #34d399;
-      --cs-green-soft: rgba(52, 211, 153, 0.14);
+      --cs-green-soft: rgba(52, 211, 153, 0.15);
     }
   }
   * { box-sizing: border-box; }
@@ -332,13 +336,14 @@ const BOARD_CSS = `
     display: flex;
   }
   .cs-modal {
-    width: min(640px, 100%);
-    max-height: 92vh;
+    width: min(620px, 100%);
+    max-height: calc(100vh - 20px);
     overflow-y: auto;
     background: var(--cs-card);
+    color: var(--cs-ink);
     border: 1px solid var(--cs-border-strong);
-    border-radius: 20px;
-    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.24);
+    border-radius: 18px;
+    box-shadow: 0 20px 56px rgba(0, 0, 0, 0.22);
     display: flex;
     flex-direction: column;
   }
@@ -347,7 +352,7 @@ const BOARD_CSS = `
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 14px 18px;
+    padding: 11px 16px;
     border-bottom: 1px solid var(--cs-border);
   }
   .cs-breadcrumb {
@@ -380,10 +385,10 @@ const BOARD_CSS = `
   .cs-close-btn:hover { color: var(--cs-ink); }
 
   .cs-modal-body {
-    padding: 16px 18px 18px;
+    padding: 13px 16px 15px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 11px;
   }
 
   /* Prototype / Schematic Preview Stage inside Modal */
@@ -528,6 +533,19 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
 
     function escHtml(s) {
       return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    /** Disambiguate generic filenames like index.ts / server.ts -> core/index.ts, mcp-server/server.ts */
+    function displayFileName(nodeOrPath) {
+      const p = typeof nodeOrPath === 'string' ? nodeOrPath : nodeOrPath.path;
+      const parts = p.split('/');
+      const base = parts[parts.length - 1] || p;
+      if (base === 'index.ts' || base === 'index.tsx' || base === 'server.ts' || base === 'main.tsx') {
+        const pkgIdx = parts.findIndex(seg => seg === 'packages' || seg === 'apps');
+        if (pkgIdx >= 0 && parts[pkgIdx + 1]) return parts[pkgIdx + 1] + '/' + base;
+        if (parts.length >= 2) return parts[parts.length - 2] + '/' + base;
+      }
+      return base;
     }
 
     /**
@@ -693,7 +711,7 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
 
             return '<button type="button" class="' + cls.join(' ') + '" data-node-id="' + escHtml(n.id) + '">' +
               '<div class="cs-mod-left">' +
-                '<span class="cs-mod-name">' + escHtml(n.name) + '</span>' +
+                '<span class="cs-mod-name">' + escHtml(displayFileName(n)) + '</span>' +
                 '<span class="cs-mod-role">' + escHtml(n.roleLabel) + '</span>' +
               '</div>' +
               tagHtml +
@@ -811,12 +829,12 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
 
       const upPills = node.upstreamPaths.slice(0, 4).map(p => {
         const target = nodeMap.get(p);
-        return '<button type="button" class="cs-jump-pill" data-jump="' + escHtml(p) + '">' + escHtml(target ? target.name : p) + '</button>';
+        return '<button type="button" class="cs-jump-pill" data-jump="' + escHtml(p) + '">' + escHtml(displayFileName(target || p)) + '</button>';
       }).join('') || '<span style="color:var(--cs-muted)">无</span>';
 
       const downPills = node.directDownstreamPaths.slice(0, 4).map(p => {
         const target = nodeMap.get(p);
-        return '<button type="button" class="cs-jump-pill" data-jump="' + escHtml(p) + '">' + escHtml(target ? target.name : p) + '</button>';
+        return '<button type="button" class="cs-jump-pill" data-jump="' + escHtml(p) + '">' + escHtml(displayFileName(target || p)) + '</button>';
       }).join('') || '<span style="color:var(--cs-muted)">无（独立文件）</span>';
 
       modalEl.innerHTML =
