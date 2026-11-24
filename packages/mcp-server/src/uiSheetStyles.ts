@@ -337,6 +337,23 @@ export const SHEET_CSS = `
     outline: none;
   }
   .cs-input:focus { border-color: var(--cs-blue); }
+  .cs-preset-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cs-preset-chip {
+    appearance: none;
+    border: 1px solid var(--cs-hairline);
+    background: var(--cs-canvas);
+    color: var(--cs-muted);
+    font-size: 10.5px;
+    font-weight: 550;
+    padding: 3.5px 9px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .cs-preset-chip:hover, .cs-preset-chip.is-on {
+    border-color: var(--cs-blue);
+    color: var(--cs-blue);
+    background: var(--cs-blue-soft);
+  }
 
   /* Native Apple Toggle Switch */
   .cs-switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }

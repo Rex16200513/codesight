@@ -1,10 +1,68 @@
 import { SPARKLE_SVG } from './uiStyles.ts';
 
 /**
- * Client-side sheets (File Detail Modal, LLM UI Prototype Refresh flow, Settings Drawer) & event wiring.
+ * Client-side sheets (File Detail Modal, 3-tier LLM UI Prototype Refresh flow, Settings Drawer with BYOK API Key)
+ * + standard MCP Apps JSON-RPC bridge (`tools/call` & `ui/message`) and DOM event wiring.
  */
 export const UI_SHEETS_CLIENT_JS = `
     const SPARKLE_HTML = ${JSON.stringify(SPARKLE_SVG)};
+    const SIDECAR_FALLBACK_ORIGIN = 'http://127.0.0.1:4317';
+    let mcpRpcSeq = 1;
+
+    function getRepoDirArg() {
+      const q = new URLSearchParams(location.search).get('repo');
+      return q || DATA.rootDir || undefined;
+    }
+
+    function getSidecarEndpoint(path) {
+      if (location.protocol === 'http:' || location.protocol === 'https:') return path;
+      return SIDECAR_FALLBACK_ORIGIN + path;
+    }
+
+    function callMcpAppHost(method, params, timeoutMs) {
+      return new Promise((resolve) => {
+        if (!window.parent || window.parent === window) { resolve(null); return; }
+        const id = 'cs-' + (mcpRpcSeq++);
+        let settled = false;
+        const done = (val) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          window.removeEventListener('message', onMsg);
+          resolve(val);
+        };
+        const onMsg = (ev) => {
+          const d = ev && ev.data;
+          if (d && d.jsonrpc === '2.0' && d.id === id) done(d);
+        };
+        const timer = setTimeout(() => done(null), timeoutMs || 1400);
+        window.addEventListener('message', onMsg);
+        try {
+          window.parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
+        } catch {
+          done(null);
+        }
+      });
+    }
+
+    async function fetchSidecarJson(path, bodyObj, timeoutMs) {
+      const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs || 35000) : null;
+      try {
+        const res = await fetch(getSidecarEndpoint(path), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyObj),
+          ...(ctrl ? { signal: ctrl.signal } : {}),
+        });
+        if (!res.ok) return { _httpError: true, status: res.status };
+        return await res.json();
+      } catch {
+        return null;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }
 
     function buildRefreshProtoPrompt(singleNode) {
       const uiFiles = singleNode
@@ -40,7 +98,7 @@ export const UI_SHEETS_CLIENT_JS = `
         '</div>';
       backdropEl.classList.add('is-open');
       const ta = document.getElementById('cs-prompt-ta');
-      if (ta) { ta.value = promptText; ta.focus(); ta.select(); ta.setSelectionRange(0, promptText.length); }
+      if (ta) { ta.value = promptText; ta.focus(); ta.select(); ta.setSelectionRange(0, textLen(promptText)); }
       document.getElementById('cs-close-btn')?.addEventListener('click', closeSheet);
       document.getElementById('cs-open-set-from-proto')?.addEventListener('click', () => openSettingsSheet());
       const copyBtn = document.getElementById('cs-copy-proto-prompt');
@@ -50,75 +108,99 @@ export const UI_SHEETS_CLIENT_JS = `
         if (ta) { ta.focus(); ta.select(); }
       });
     }
+    function textLen(s) { return String(s || '').length; }
 
     async function triggerRefreshUiPrototypes(singleNode, triggerBtn) {
+      if (isRefreshingProtos) return;
+      isRefreshingProtos = true;
       const t = tr();
-      const isHttp = location.protocol === 'http:' || location.protocol === 'https:';
+      const barBtn = document.getElementById('cs-refresh-proto');
+      const barLbl = document.getElementById('cs-refresh-lbl');
+      if (barBtn) barBtn.disabled = true;
+      if (triggerBtn) triggerBtn.disabled = true;
+      if (barLbl) barLbl.textContent = t.protoRefreshing;
+      const origBtnHtml = triggerBtn ? triggerBtn.innerHTML : '';
+      if (triggerBtn) triggerBtn.textContent = t.protoRefreshing;
 
-      if (isHttp && !isRefreshingProtos) {
-        isRefreshingProtos = true;
-        const barBtn = document.getElementById('cs-refresh-proto');
-        const barLbl = document.getElementById('cs-refresh-lbl');
-        const btn = triggerBtn || barBtn;
-        if (barBtn) barBtn.disabled = true;
-        if (triggerBtn) triggerBtn.disabled = true;
-        if (barLbl) barLbl.textContent = t.protoRefreshing;
-        const origBtnHtml = btn ? btn.innerHTML : '';
-        if (triggerBtn) triggerBtn.textContent = t.protoRefreshing;
+      try {
+        // Tier 1: Direct call to CodeSight Sidecar (works on http://127.0.0.1:4317 AND cross-origin when host allows localhost)
+        const isSameHttp = location.protocol === 'http:' || location.protocol === 'https:';
+        const data = await fetchSidecarJson(
+          '/api/refresh-prototypes',
+          { repoDir: getRepoDirArg() },
+          isSameHttp ? 45000 : 2500
+        );
 
-        try {
-          const repoParam = new URLSearchParams(location.search).get('repo') || undefined;
-          const res = await fetch('/api/refresh-prototypes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ repoDir: repoParam }),
-          });
-          const data = await res.json();
-          if (data && data.ok && data.visualMap) {
+        if (data && !data._httpError) {
+          if (data.ok && data.visualMap) {
             Object.assign(DATA, data.visualMap);
             nodeMap.clear();
             DATA.nodes.forEach(n => nodeMap.set(n.id, n));
+            if (settingsOpen) closeSheet();
             renderBoard();
             if (activeModalId && nodeMap.has(activeModalId)) openFileSheet(activeModalId);
             if (footHintEl) footHintEl.textContent = t.protoRefreshed(data.prototypeCount || 0);
-          } else if (data && data.needsLlmConfig) {
-            openSettingsSheet(data.error);
-          } else {
-            openSettingsSheet((data && data.error) || 'LLM refresh failed.');
+            return;
           }
-        } catch (err) {
-          openSettingsSheet(String(err && err.message ? err.message : err));
-        } finally {
-          isRefreshingProtos = false;
-          if (barBtn) barBtn.disabled = false;
-          if (barLbl) barLbl.textContent = tr().protoBtn;
-          if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = origBtnHtml; }
+          if (data.needsLlmConfig) {
+            openSettingsSheet(data.error);
+            return;
+          }
+          if (data.error) {
+            openSettingsSheet(data.error);
+            return;
+          }
         }
-        return;
-      }
 
-      // Inside AI Agent Chat iframe (Antigravity / Cursor / Claude / Orca): zero extra API key needed!
-      const promptText = buildRefreshProtoPrompt(singleNode);
-      const uiFiles = singleNode
-        ? [singleNode.path]
-        : DATA.nodes.filter(n => isUiProtoKind(n.prototypeKind)).map(n => n.path);
-      window.parent?.postMessage({
-        type: 'codesight:refreshPrototypes',
-        repoName: DATA.repoName,
-        uiFiles,
-        prompt: promptText,
-      }, '*');
+        // Tier 2: Standard MCP Apps bidirectional JSON-RPC host bridge (Claude / ChatGPT Apps / Antigravity / Cursor)
+        const promptText = buildRefreshProtoPrompt(singleNode);
+        const uiFiles = singleNode
+          ? [singleNode.path]
+          : DATA.nodes.filter(n => isUiProtoKind(n.prototypeKind)).map(n => n.path);
 
-      const ok = await copyTextReliable(promptText);
-      if (singleNode && activeModalId) {
-        if (triggerBtn) {
-          const old = triggerBtn.innerHTML;
-          triggerBtn.textContent = ok ? t.copied : t.pressCopy;
-          setTimeout(() => { triggerBtn.innerHTML = old; }, 1800);
+        if (CFG.llm && CFG.llm.enabled) {
+          const toolReply = await callMcpAppHost(
+            'tools/call',
+            { name: 'codesight_map', arguments: { repoDir: getRepoDirArg(), forceRefresh: true } },
+            2000
+          );
+          if (toolReply && !toolReply.error) {
+            if (footHintEl) footHintEl.textContent = t.protoHostSent;
+            return;
+          }
         }
-        showPromptBox(promptText, ok);
-      } else {
-        openPromptSheet(t.protoPromptTitle, t.protoPromptDesc, promptText, ok);
+
+        const msgReply = await callMcpAppHost(
+          'ui/message',
+          { role: 'user', content: [{ type: 'text', text: promptText }] },
+          1200
+        );
+        if (msgReply && !msgReply.error) {
+          if (footHintEl) footHintEl.textContent = t.protoHostSent;
+          return;
+        }
+
+        // Legacy custom event for host wrappers
+        window.parent?.postMessage({
+          type: 'codesight:refreshPrototypes',
+          repoName: DATA.repoName,
+          repoDir: getRepoDirArg(),
+          uiFiles,
+          prompt: promptText,
+        }, '*');
+
+        // Tier 3: Offline static sandbox fallback (e.g., Orca network-blocked chat preview / saved HTML)
+        const ok = await copyTextReliable(promptText);
+        if (singleNode && activeModalId) {
+          showPromptBox(promptText, ok);
+        } else {
+          openPromptSheet(t.protoPromptTitle, t.protoPromptDesc, promptText, ok);
+        }
+      } finally {
+        isRefreshingProtos = false;
+        if (barBtn) barBtn.disabled = false;
+        if (barLbl) barLbl.textContent = tr().protoBtn;
+        if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = origBtnHtml; }
       }
     }
 
@@ -231,6 +313,12 @@ export const UI_SHEETS_CLIENT_JS = `
       const wireCopy = (btn, promptText) => {
         if (!btn) return;
         btn.addEventListener('click', async () => {
+          const msgReply = await callMcpAppHost('ui/message', { role: 'user', content: [{ type: 'text', text: promptText }] }, 800);
+          if (msgReply && !msgReply.error) {
+            btn.textContent = t.protoHostSent;
+            setTimeout(() => { btn.textContent = btn.dataset.origLabel || btn.textContent; }, 1600);
+            return;
+          }
           const ok = await copyTextReliable(promptText);
           window.parent?.postMessage({ type: 'codesight:actionPrompt', nodeId: node.id, prompt: promptText }, '*');
           const old = btn.dataset.origLabel || btn.textContent;
@@ -274,10 +362,21 @@ export const UI_SHEETS_CLIENT_JS = `
       }
     }
 
+    const LLM_PRESETS = [
+      { name: 'OpenAI', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+      { name: 'DeepSeek', url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+      { name: 'Gemini', url: 'https://openrouter.ai/api/v1', model: 'google/gemini-2.5-flash' },
+      { name: 'Ollama', url: 'http://127.0.0.1:11434/v1', model: 'qwen2.5-coder:7b' },
+    ];
+
     function openSettingsSheet(bannerHint) {
       settingsOpen = true;
       activeModalId = null;
       const t = tr();
+      const isHttp = location.protocol === 'http:' || location.protocol === 'https:';
+      const presetsHtml = LLM_PRESETS.map(p =>
+        '<button type="button" class="cs-preset-chip' + (CFG.llm.model === p.model ? ' is-on' : '') + '" data-preset-url="' + escHtml(p.url) + '" data-preset-model="' + escHtml(p.model) + '">' + p.name + '</button>'
+      ).join('');
 
       sheetEl.innerHTML =
         '<div class="cs-sheet-head">' +
@@ -324,13 +423,18 @@ export const UI_SHEETS_CLIENT_JS = `
               '<label class="cs-switch"><input type="checkbox" id="cs-set-llm" ' + (CFG.llm.enabled ? 'checked' : '') + ' /><span class="cs-slider"></span></label>' +
             '</div>' +
             '<div class="cs-set-row" style="flex-direction:column;align-items:stretch;gap:7px">' +
+              '<div class="cs-preset-row">' + presetsHtml + '</div>' +
               '<input class="cs-input" id="cs-set-url" placeholder="https://api.openai.com/v1" value="' + escHtml(CFG.llm.baseUrl || '') + '" />' +
               '<input class="cs-input" id="cs-set-model" placeholder="gpt-4o-mini" value="' + escHtml(CFG.llm.model || '') + '" />' +
+              '<input class="cs-input" id="cs-set-key" type="password" autocomplete="off" placeholder="' + escHtml(CFG.llm.hasApiKey ? t.apiKeySavedPh : t.apiKeyPh) + '" value="" />' +
             '</div>' +
           '</div>' +
         '</div>' +
         '<div class="cs-sheet-foot">' +
-          '<button type="button" class="cs-btn-primary" id="cs-save-settings">' + t.saveBtn + '</button>' +
+          '<div class="cs-actions">' +
+            '<button type="button" class="cs-btn-primary" id="cs-save-settings">' + t.saveBtn + '</button>' +
+            (isHttp ? '<button type="button" class="cs-btn-ghost" id="cs-save-and-gen">' + SPARKLE_HTML + ' ' + t.saveAndGenBtn + '</button>' : '') +
+          '</div>' +
           '<div class="cs-prompt-box" id="cs-prompt-box">' +
             '<div class="cs-prompt-tip" id="cs-prompt-tip"></div>' +
             '<textarea class="cs-prompt-ta" id="cs-prompt-ta" readonly></textarea>' +
@@ -339,6 +443,18 @@ export const UI_SHEETS_CLIENT_JS = `
 
       backdropEl.classList.add('is-open');
       document.getElementById('cs-close-btn')?.addEventListener('click', closeSheet);
+
+      sheetEl.querySelectorAll('[data-preset-url]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const urlEl = document.getElementById('cs-set-url');
+          const modEl = document.getElementById('cs-set-model');
+          const llmToggle = document.getElementById('cs-set-llm');
+          if (urlEl) urlEl.value = btn.dataset.presetUrl || '';
+          if (modEl) modEl.value = btn.dataset.presetModel || '';
+          if (llmToggle) llmToggle.checked = true;
+          sheetEl.querySelectorAll('[data-preset-url]').forEach(b => b.classList.toggle('is-on', b === btn));
+        });
+      });
 
       sheetEl.querySelectorAll('[data-set-lang]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -361,13 +477,14 @@ export const UI_SHEETS_CLIENT_JS = `
         });
       });
 
-      const saveBtn = document.getElementById('cs-save-settings');
-      saveBtn?.addEventListener('click', async () => {
+      const persistSettings = async (forceEnableLlm) => {
         CFG.collapsedByDefault = Boolean(document.getElementById('cs-set-collapse')?.checked);
         CFG.silentRegressionGuard = Boolean(document.getElementById('cs-set-guard')?.checked);
-        CFG.llm.enabled = Boolean(document.getElementById('cs-set-llm')?.checked);
+        CFG.llm.enabled = forceEnableLlm ? true : Boolean(document.getElementById('cs-set-llm')?.checked);
         CFG.llm.baseUrl = document.getElementById('cs-set-url')?.value?.trim() || 'https://api.openai.com/v1';
         CFG.llm.model = document.getElementById('cs-set-model')?.value?.trim() || 'gpt-4o-mini';
+        const rawKey = document.getElementById('cs-set-key')?.value?.trim() || '';
+        if (rawKey) CFG.llm.hasApiKey = true;
 
         const patch = {
           language: CFG.language,
@@ -375,27 +492,33 @@ export const UI_SHEETS_CLIENT_JS = `
           collapsedByDefault: CFG.collapsedByDefault,
           silentRegressionGuard: CFG.silentRegressionGuard,
           architectureMode: CFG.architectureMode,
-          llm: { enabled: CFG.llm.enabled, baseUrl: CFG.llm.baseUrl, model: CFG.llm.model },
+          llm: {
+            enabled: CFG.llm.enabled,
+            baseUrl: CFG.llm.baseUrl,
+            model: CFG.llm.model,
+            ...(rawKey ? { apiKey: rawKey } : {}),
+          },
         };
 
-        let persistedViaApi = false;
-        if (location.protocol === 'http:' || location.protocol === 'https:') {
-          try {
-            const res = await fetch('/api/settings', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(patch),
-            });
-            persistedViaApi = res.ok;
-          } catch {}
-        }
+        const apiRes = await fetchSidecarJson('/api/settings', patch, 4000);
+        if (apiRes && apiRes.ok) return { ok: true, via: 'sidecar', patch };
+
+        const mcpRes = await callMcpAppHost('tools/call', { name: 'codesight_settings', arguments: { action: 'set', ...patch } }, 1200);
+        if (mcpRes && !mcpRes.error) return { ok: true, via: 'mcp', patch };
 
         window.parent?.postMessage({ type: 'codesight:saveSettings', patch }, '*');
-        if (persistedViaApi) {
+        return { ok: false, via: 'fallback', patch };
+      };
+
+      const saveBtn = document.getElementById('cs-save-settings');
+      saveBtn?.addEventListener('click', async () => {
+        const res = await persistSettings(false);
+        if (res.ok) {
           saveBtn.textContent = t.saved;
           setTimeout(() => { saveBtn.textContent = t.saveBtn; }, 1400);
         } else {
-          const syncCmd = 'Call codesight_settings with action="set" and ' + JSON.stringify(patch);
+          const safePatch = { ...res.patch, llm: { enabled: res.patch.llm.enabled, baseUrl: res.patch.llm.baseUrl, model: res.patch.llm.model } };
+          const syncCmd = 'Call codesight_settings with action="set" and ' + JSON.stringify(safePatch);
           const ok = await copyTextReliable(syncCmd);
           if (ok) {
             saveBtn.textContent = t.savedCopy;
@@ -404,6 +527,14 @@ export const UI_SHEETS_CLIENT_JS = `
             saveBtn.textContent = t.pressCopy;
             showPromptBox(syncCmd, false);
           }
+        }
+      });
+
+      const saveGenBtn = document.getElementById('cs-save-and-gen');
+      saveGenBtn?.addEventListener('click', async () => {
+        const res = await persistSettings(true);
+        if (res.ok) {
+          await triggerRefreshUiPrototypes(null, saveGenBtn);
         }
       });
     }

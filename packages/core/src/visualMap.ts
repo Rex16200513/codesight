@@ -82,6 +82,7 @@ export interface VisualMapZone {
 
 export interface VisualProjectMapPayload {
   repoName: string;
+  rootDir?: string;
   archetype: ArchitectureBlueprint['archetype'];
   archetypeLabel: string;
   projectHeadline: string;
@@ -468,6 +469,7 @@ export function buildVisualProjectMap(
 
   return {
     repoName: index.repoName,
+    rootDir: index.rootDir,
     archetype: arch.archetype,
     archetypeLabel: arch.archetypeLabel,
     projectHeadline: arch.projectHeadline,

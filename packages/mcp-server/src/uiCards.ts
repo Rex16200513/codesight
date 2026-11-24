@@ -25,6 +25,7 @@ export function renderVisualProjectMapHtml(
       enabled: config.llm.enabled,
       baseUrl: config.llm.baseUrl,
       model: config.llm.model,
+      hasApiKey: Boolean(config.llm.apiKey && config.llm.apiKey.trim().length > 0),
     },
   }).replace(/</g, '\\u003c');
 
