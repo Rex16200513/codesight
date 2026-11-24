@@ -1,6 +1,6 @@
 {
   "name": "codesight",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "license": "MIT",
   "description": "CodeSight — Local-first GraphRAG code comprehension, visual architecture cards (MCP Apps), and native macOS HUD for AI coding.",

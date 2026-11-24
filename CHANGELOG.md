@@ -2,6 +2,13 @@
 
 All notable changes to **CodeSight** are documented in this file.
 
+## [1.0.1] - 2026-11-24
+
+### Added
+- **Launch Media & Visual Documentation**: Added 1080p 60fps Apple-keynote promo video (`assets/codesight-promo.mp4`), inline README autoplay demo GIF (`assets/codesight-demo.gif`), and 6 Retina UI screenshots (`assets/screenshots/`) covering architecture board, prototype modal, error diagnosis, settings drawer, and 44px collapsed bar.
+- **Professional Bilingual README**: Upgraded `README.md` and `README.zh-CN.md` with comparison matrix, visual tour gallery, ecosystem compatibility table, and Mermaid architecture diagram.
+- **Icon Polish**: Alpha-masked edge-to-edge 1024×1024 macOS squircle `assets/codesight-logo.png` and rebuilt native `AppIcon.icns`.
+
 ## [1.0.0] - 2026-11-24
 
 ### Added
