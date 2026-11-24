@@ -20,7 +20,7 @@
     "test": "node --experimental-strip-types --test src/staticAnalyzer.test.ts src/comprehensionEngine.test.ts src/graphRag.test.ts"
   },
   "dependencies": {
-    "typescript": "^5.8.2"
+    "typescript": "^7.0.2"
   },
   "devDependencies": {
     "@types/node": "^22.15.0"
