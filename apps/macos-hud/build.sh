@@ -7,8 +7,22 @@ BUILD_DIR="$SCRIPT_DIR/dist"
 APP_BUNDLE="$BUILD_DIR/CodeSight.app"
 NODE_BIN="$(which node)"
 
-rm -rf "$BUILD_DIR/GlassBoxHUD.app" "$APP_BUNDLE"
+rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
+
+LOGO_PNG="$REPO_ROOT/assets/codesight-logo.png"
+if [ -f "$LOGO_PNG" ] && command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
+  ICONSET_DIR="$BUILD_DIR/AppIcon.iconset"
+  rm -rf "$ICONSET_DIR"
+  mkdir -p "$ICONSET_DIR"
+  for sz in 16 32 128 256 512; do
+    sips -z "$sz" "$sz" "$LOGO_PNG" --out "$ICONSET_DIR/icon_${sz}x${sz}.png" >/dev/null 2>&1 || true
+    dbl=$((sz * 2))
+    sips -z "$dbl" "$dbl" "$LOGO_PNG" --out "$ICONSET_DIR/icon_${sz}x${sz}@2x.png" >/dev/null 2>&1 || true
+  done
+  iconutil -c icns "$ICONSET_DIR" -o "$APP_BUNDLE/Contents/Resources/AppIcon.icns" >/dev/null 2>&1 || true
+  rm -rf "$ICONSET_DIR"
+fi
 
 echo "[CodeSight macOS HUD] Compiling native Swift 6 arm64 binary..."
 swiftc \
@@ -35,10 +49,12 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
   <string>CodeSight</string>
   <key>CFBundleIdentifier</key>
   <string>dev.codesight.macos.hud</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundleVersion</key>
-  <string>0.4.0</string>
+  <string>1.0.0</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.4.0</string>
+  <string>1.0.0</string>
   <key>CFBundleExecutable</key>
   <string>CodeSight</string>
   <key>CFBundlePackageType</key>

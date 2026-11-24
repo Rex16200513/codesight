@@ -89,6 +89,40 @@ struct SightCard<Content: View>: View {
     }
 }
 
+/// Brand CodeSight optical code-bracket mark `< • >`
+struct CodeSightLogoMark: View {
+    var size: CGFloat = 18
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(red: 0.13, green: 0.13, blue: 0.16), Color(red: 0.05, green: 0.05, blue: 0.07)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.6)
+
+            HStack(spacing: size * 0.07) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: size * 0.34, weight: .bold))
+                    .foregroundStyle(.white)
+                Circle()
+                    .fill(Color(red: 0.16, green: 0.59, blue: 1.0))
+                    .frame(width: size * 0.18, height: size * 0.18)
+                    .overlay(Circle().stroke(Color.white, lineWidth: size * 0.06))
+                Image(systemName: "chevron.right")
+                    .font(.system(size: size * 0.34, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .frame(width: size, height: size)
+    }
+}
+
 // MARK: - Root Switcher
 
 struct HUDRootView: View {
@@ -117,9 +151,7 @@ struct CollapsedPillView: View {
                 vm.toggleCollapsed()
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "viewfinder.circle.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
+                    CodeSightLogoMark(size: 18)
 
                     Text("CodeSight")
                         .font(.system(size: 12.5, weight: .semibold))
@@ -177,9 +209,7 @@ struct ExpandedHUDView: View {
         VStack(spacing: 0) {
             // 1. Minimal Native Header (Draggable)
             HStack(spacing: 8) {
-                Image(systemName: "viewfinder.circle.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                CodeSightLogoMark(size: 20)
 
                 Text("CodeSight")
                     .font(.system(size: 14, weight: .semibold))

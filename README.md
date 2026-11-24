@@ -1,20 +1,28 @@
-# CodeSight
+<p align="center">
+  <img src="./assets/codesight-social.png" alt="CodeSight" width="760" />
+</p>
 
-**See what your AI changed — before it breaks.**
+<p align="center">
+  <strong>See what your AI changed — before it breaks.</strong>
+</p>
 
-CodeSight is a local-first GraphRAG comprehension and diagnostic engine for AI-assisted coding. It builds an AST call graph and dependency map of your repository (TypeScript, JavaScript, Python), catches silent regressions (`as any`, empty `catch`, removed guards) with **zero LLM tokens**, and renders an interactive layered architecture board inside your AI agent or as a native macOS HUD.
+<p align="center">
+  <a href="./README.zh-CN.md">简体中文</a> ·
+  <a href="./CHANGELOG.md">Changelog</a> ·
+  <a href="./LICENSE">MIT License</a>
+</p>
 
 ---
+
+**CodeSight** is a local-first GraphRAG comprehension and diagnostic engine for AI-assisted coding. It builds an AST call graph and dependency map of your repository (TypeScript, JavaScript, Python), catches silent regressions (`as any`, empty `catch`, removed guards) with **zero LLM tokens**, and renders a minimalist interactive architecture board inside your AI agent or as a native macOS HUD.
 
 ## Why CodeSight
 
-- **Deterministic & Local-First** — Real TypeScript Compiler AST + Python import/call parser + hybrid BM25/vector RRF. No code leaves your machine by default.
-- **Visual Architecture & Prototypes** — Vertical Frontend / Backend / Core map with directional dashed dependency lines and UI prototype wireframes on click.
+- **Deterministic & Local-First** — Real TypeScript Compiler AST + Python import/call parser + hybrid BM25 / vector / 1-hop graph RRF. No code leaves your machine by default.
+- **Minimalist Interactive Cards (MCP Apps)** — Vertical Frontend / Backend / Core board with directional dashed dependency lines, prototype wireframes on click, one-click card collapse (`44px` bar), and live English / Chinese switching.
 - **Silent Regression Guard** — Flags when an AI "fixes" an error by silently removing validation guards, swallowing exceptions, or adding `as any`.
-- **Works Everywhere** — Native MCP + MCP Apps server (`stdio` and Streamable HTTP `/mcp`) for Antigravity, Claude Code, Claude Desktop, Cursor, VS Code, Codex, and ChatGPT, plus an optional native SwiftUI macOS Floating HUD for traditional IDE users.
-- **Unified Settings** — One `~/.codesight/config.json` shared across Agent plugins (`codesight_settings` + in-card `⚙`), CLI (`codesight config`), and the macOS HUD Settings panel.
-
----
+- **Unified Settings Everywhere** — One `~/.codesight/config.json` shared across AI Agent plugins (`codesight_settings` + in-card `⚙`), CLI (`codesight config`), browser board (`http://127.0.0.1:4317`), and the native macOS HUD (`⌘,`).
+- **Works Across Every Agent** — Dual-transport MCP + MCP Apps server (`stdio` and Streamable HTTP `/mcp`) for Antigravity, Claude Code, Claude Desktop, Cursor, VS Code, Codex, and ChatGPT, plus a native SwiftUI macOS Floating HUD for traditional IDE users.
 
 ## Quick Start
 
@@ -27,29 +35,27 @@ npm install && npm run build
 ### 1. Install into your AI Agent
 
 ```bash
-# Install for Cursor, Claude Code, Antigravity, VS Code, Codex, or all
 node packages/cli/dist/cli.js install --target cursor
 node packages/cli/dist/cli.js install --target claude-code
 node packages/cli/dist/cli.js install --target antigravity
+# Or all supported agents: --target all
 ```
 
-Available MCP tools once installed:
-
-| Tool | Purpose |
+| MCP Tool | Purpose |
 | --- | --- |
 | `codesight_map` | Build layered architecture map + interactive HTML card |
 | `codesight_ask` | Locate relevant files via hybrid BM25 + vector + 1-hop graph RRF |
 | `codesight_trace` | Trace cross-file callers & callees of any function or component |
 | `codesight_diagnose` | Project stack trace or `git diff` onto the graph for blast radius, silent regressions, and fix directions |
-| `codesight_settings` | View or update unified preferences (`language`, `dashedLines`, `silentRegressionGuard`, `architectureMode`, BYOK LLM) |
+| `codesight_settings` | View or update unified preferences (`language`, `dashedLines`, `collapsedByDefault`, `silentRegressionGuard`, `architectureMode`, BYOK LLM) |
 
 ### 2. Open the Interactive Board in Your Browser
 
 ```bash
-# One-shot static preview
+# One-shot preview
 node packages/cli/dist/cli.js map --open
 
-# Or run the local Sidecar (live map + persistent in-card settings at http://127.0.0.1:4317)
+# Or run the local Sidecar (live map + persistent settings at http://127.0.0.1:4317)
 npm run dev:sidecar
 ```
 
@@ -58,28 +64,26 @@ npm run dev:sidecar
 ```bash
 node packages/cli/dist/cli.js config show
 node packages/cli/dist/cli.js config set language en
+node packages/cli/dist/cli.js config set collapsedByDefault true
 node packages/cli/dist/cli.js config set dashedLines hover
-node packages/cli/dist/cli.js config set silentRegressionGuard true
 ```
 
-In your AI agent, simply ask: *"Open CodeSight settings"* or click the `⚙` icon directly in any CodeSight visual card.
+In your AI agent, ask *"Open CodeSight settings"* or click `⚙` in any CodeSight visual card.
 
 ### 4. Optional: Native macOS Floating HUD (for VS Code / IDE users)
 
 ```bash
-./apps/macos-hud/build.sh
-open apps/macos-hud/dist/CodeSight.app
+npm run hud:open
 ```
 
-Click the slider icon in the HUD header (or press `⌘,`) to configure Language, Always on Top, Opacity, Regression Guard, Flow Lines, and optional BYOK models — automatically synced with `~/.codesight/config.json`.
-
----
+Click the slider icon in the HUD header (or press `⌘,`) to configure Language, Always on Top, Opacity, Regression Guard, Flow Lines, and optional BYOK models — synced with `~/.codesight/config.json`.
 
 ## Architecture
 
 ```text
+assets/        Brand identity (logo.svg, codesight-logo.png, codesight-social.png)
 packages/
-  core/        AST & Python parser, dependency/call graph, hybrid RRF, config store
+  core/        TS AST & Python parser, dependency/call graph, hybrid RRF, config store
   mcp-server/  Stdio + Streamable HTTP (/mcp) server & Apple-minimalist MCP App cards
   cli/         CLI (map, ask, trace, diagnose, config, install)
   sidecar/     Local HTTP/SSE engine bridge & browser visual board (port 4317)
@@ -92,4 +96,4 @@ plugins/
 
 ## License
 
-MIT
+[MIT](./LICENSE)

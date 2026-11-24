@@ -1,17 +1,37 @@
 {
   "name": "codesight",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "CodeSight — Universal GraphRAG Plugin (MCP Apps) & Apple Floating HUD for Vibe Coding",
+  "license": "MIT",
+  "description": "CodeSight — Local-first GraphRAG code comprehension, visual architecture cards (MCP Apps), and native macOS HUD for AI coding.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Rex16200513/codesight.git"
+  },
+  "homepage": "https://github.com/Rex16200513/codesight#readme",
+  "bugs": {
+    "url": "https://github.com/Rex16200513/codesight/issues"
+  },
+  "keywords": [
+    "ai-coding",
+    "vibe-coding",
+    "mcp",
+    "mcp-apps",
+    "graphrag",
+    "ast",
+    "cursor",
+    "claude-code",
+    "antigravity",
+    "code-comprehension"
+  ],
   "workspaces": [
     "packages/*",
     "apps/*"
   ],
   "scripts": {
-    "cs": "node --experimental-strip-types packages/cli/src/cli.ts",
-    "gb": "node --experimental-strip-types packages/cli/src/cli.ts",
-    "mcp:stdio": "npm run start --workspace=@codesight/mcp-server",
-    "mcp:http": "npm run start:http --workspace=@codesight/mcp-server",
+    "cs": "node packages/cli/dist/cli.js",
+    "mcp:stdio": "node packages/mcp-server/dist/index.js",
+    "mcp:http": "node packages/mcp-server/dist/index.js --http",
     "hud:build": "bash apps/macos-hud/build.sh",
     "hud:open": "bash apps/macos-hud/build.sh && open apps/macos-hud/dist/CodeSight.app",
     "dev": "npm run dev --workspace=@codesight/hud",
@@ -22,6 +42,6 @@
     "test": "npm run test --workspace=@codesight/core && npm run test --workspace=@codesight/mcp-server"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=18.0.0"
   }
 }
