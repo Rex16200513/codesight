@@ -15,6 +15,29 @@ export type ProjectArchetype =
 
 export type ZoneKind = 'frontend' | 'backend' | 'shared' | 'core';
 
+export type UiPrototypeBlockType =
+  | 'header'
+  | 'tabs'
+  | 'toggle'
+  | 'slider'
+  | 'chips'
+  | 'list'
+  | 'search'
+  | 'highlight'
+  | 'actions';
+
+export interface UiPrototypeBlock {
+  type: UiPrototypeBlockType;
+  label?: string;
+  items?: string[];
+  /** For toggle blocks */
+  on?: boolean;
+  /** For slider blocks (0..100) */
+  value?: number;
+  /** Optional color dots for folder/highlight/theme pills (e.g. ["#F59E0B","#10B981","#3B82F6"]) */
+  colors?: string[];
+}
+
 export interface UiPrototypeSpec {
   kind:
     | 'ui-hud'
@@ -29,7 +52,9 @@ export interface UiPrototypeSpec {
     | 'logic-pipeline';
   visualSummary: string;
   visualSummaryEn?: string;
-  /** Up to 4 concise real UI element labels (e.g. ["Preset Tabs", "Width Slider", "Save"]) */
+  /** Structured mini-wireframe controls rendered into an authentic Apple-style component diagram */
+  blocks?: UiPrototypeBlock[];
+  /** Legacy simple element list fallback */
   elements?: string[];
 }
 
@@ -459,15 +484,45 @@ export function normalizeArchitectureBlueprint(
     });
   }
 
+  const validBlockTypes = new Set<UiPrototypeBlockType>([
+    'header',
+    'tabs',
+    'toggle',
+    'slider',
+    'chips',
+    'list',
+    'search',
+    'highlight',
+    'actions',
+  ]);
   const normalizedPrototypes: Record<string, UiPrototypeSpec> = {};
   if (override.prototypes && typeof override.prototypes === 'object') {
     for (const [rawKey, spec] of Object.entries(override.prototypes)) {
       const hit = resolveFileRef(rawKey);
       if (hit && spec && typeof spec === 'object' && spec.kind && spec.visualSummary) {
+        const blocks = Array.isArray(spec.blocks)
+          ? spec.blocks
+              .filter((b): b is UiPrototypeBlock => Boolean(b && validBlockTypes.has(b.type)))
+              .slice(0, 5)
+              .map((b) => ({
+                type: b.type,
+                ...(b.label ? { label: String(b.label).slice(0, 24) } : {}),
+                ...(Array.isArray(b.items)
+                  ? { items: b.items.map((x) => String(x).slice(0, 14)).slice(0, 4) }
+                  : {}),
+                ...(typeof b.on === 'boolean' ? { on: b.on } : {}),
+                ...(typeof b.value === 'number' ? { value: Math.max(0, Math.min(100, b.value)) } : {}),
+                ...(Array.isArray(b.colors)
+                  ? { colors: b.colors.filter((c) => /^#[0-9a-fA-F]{3,6}$/.test(c)).slice(0, 6) }
+                  : {}),
+              }))
+          : undefined;
+
         normalizedPrototypes[hit] = {
           kind: spec.kind,
           visualSummary: String(spec.visualSummary).slice(0, 140),
           visualSummaryEn: spec.visualSummaryEn ? String(spec.visualSummaryEn).slice(0, 140) : undefined,
+          ...(blocks && blocks.length > 0 ? { blocks } : {}),
           elements: Array.isArray(spec.elements)
             ? spec.elements.map((e) => String(e).slice(0, 20)).slice(0, 4)
             : undefined,
@@ -487,6 +542,24 @@ export function normalizeArchitectureBlueprint(
     zones,
     ...(Object.keys(normalizedPrototypes).length > 0 ? { prototypes: normalizedPrototypes } : {}),
   };
+}
+
+function extractCompactUiClues(rootDir: string, relPath: string): string {
+  try {
+    const raw = fs.readFileSync(path.join(rootDir, relPath), 'utf8');
+    // Strip block/line comments so only real UI text & markup strings remain
+    const cleaned = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const labels = Array.from(
+      new Set(
+        (cleaned.match(/['"`]([^'"`\n\r]{2,22})['"`]/g) || [])
+          .map((s) => s.slice(1, -1).trim())
+          .filter((s) => /[\u4e00-\u9fa5]|^[A-Z][a-z]+(\s[A-Za-z]+){0,2}$/.test(s))
+      )
+    ).slice(0, 8);
+    return labels.length > 0 ? ` uiLabels:[${labels.join(', ')}]` : '';
+  } catch {
+    return '';
+  }
 }
 
 function resolveEnvLLMConfig(): LLMConfig | undefined {
@@ -554,7 +627,13 @@ export async function resolveProjectArchitecture(
     try {
       const compactManifest = primaryFiles
         .slice(0, 45)
-        .map((f) => `- ${f.path} [${f.roleLabel}] exports:(${f.exports.slice(0, 3).join(',')})`)
+        .map((f) => {
+          const uiHint =
+            f.layer === 'ui-component' || f.layer === 'entrypoint' || /\.(tsx|jsx|vue|svelte)$/.test(f.path)
+              ? extractCompactUiClues(index.rootDir, f.path)
+              : '';
+          return `- ${f.path} [${f.roleLabel}] exports:(${f.exports.slice(0, 3).join(',')})${uiHint}`;
+        })
         .join('\n');
 
       const endpoint = `${llm.baseUrl.replace(/\/+$/, '')}/chat/completions`;
@@ -572,7 +651,7 @@ export async function resolveProjectArchitecture(
             {
               role: 'system',
               content:
-                'You are an expert software architect and UI analyst. Given a compact list of repo files, classify the project into 2-3 clear high-level zones (e.g. Frontend / Backend / Shared, or Extension UI / Services / Core) with plain-Chinese titles (no jargon, no emoji). For UI files (pages, modals, sidebars, panels, boards, cards), ALSO return a `prototypes` map describing what the user actually sees on screen with 2-4 concise UI element labels. Return ONLY JSON: {"archetype":"fullstack|frontend|backend|browser-extension|monorepo-platform|library","archetypeLabel":"...","projectHeadline":"...","zones":[{"title":"...","badge":"Frontend|Backend|Core","kind":"frontend|backend|shared|core","groups":[{"title":"...","subtitle":"...","files":["exact/path.ts"]}]}],"prototypes":{"exact/ui-file.ts":{"kind":"ui-modal|ui-hud|ui-card-flow|ui-card-diff|ui-card|ui-page","visualSummary":"1 concise Chinese sentence of what this UI renders","visualSummaryEn":"1 concise English sentence","elements":["Header","Toggle","Slider","Save"]}}}',
+                'You are an expert software architect and UI designer. Given repo files (with extracted UI labels for UI components), classify the project into 2-3 clear zones AND for every UI component generate a concrete `prototypes` entry using typed mini-wireframe blocks so a PM or designer immediately recognizes what that component renders on screen. Supported block types: {"type":"header","label":"..."}, {"type":"tabs","items":["A","B"]}, {"type":"toggle","label":"...","on":true}, {"type":"slider","label":"...","value":65}, {"type":"chips","items":["..."],"colors":["#3B82F6","#10B981"]}, {"type":"list","items":["..."],"colors":["#F59E0B","#EC4899"]}, {"type":"search","label":"..."}, {"type":"highlight","label":"..."}, {"type":"actions","items":["Cancel","Save"]}. Return ONLY JSON: {"archetype":"fullstack|frontend|backend|browser-extension|monorepo-platform|library","archetypeLabel":"...","projectHeadline":"...","zones":[...],"prototypes":{"exact/ui-file.ts":{"kind":"ui-modal|ui-hud|ui-card-flow|ui-card-diff|ui-card|ui-page","visualSummary":"1 concise Chinese sentence","visualSummaryEn":"1 concise English sentence","blocks":[...]}}}',
             },
             {
               role: 'user',

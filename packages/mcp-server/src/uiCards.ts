@@ -490,7 +490,7 @@ const APPLE_CSS = `
   .cs-backdrop.is-open { display: flex; }
 
   .cs-sheet {
-    width: min(500px, 100%);
+    width: min(560px, 100%);
     max-height: calc(100vh - 32px);
     overflow-y: auto;
     background: var(--cs-bg);
@@ -556,22 +556,22 @@ const APPLE_CSS = `
   }
   .cs-detail-grid {
     display: grid;
-    grid-template-columns: 164px minmax(0, 1fr);
+    grid-template-columns: 214px minmax(0, 1fr);
     gap: 16px;
     align-items: center;
   }
-  @media (max-width: 440px) {
+  @media (max-width: 470px) {
     .cs-detail-grid { grid-template-columns: 1fr; }
   }
   .cs-proto {
     border: 1px solid var(--cs-hairline);
     border-radius: 12px;
     background: var(--cs-canvas);
-    padding: 10px;
+    padding: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 112px;
+    min-height: 136px;
   }
   .cs-meta {
     display: flex;
@@ -1201,6 +1201,131 @@ export function renderVisualProjectMapHtml(
       return '<svg viewBox="0 0 164 100" width="150">' + parts.join('') + '</svg>';
     }
 
+    function renderWireframeBlocksSvg(k, blocks) {
+      const isModal = k === 'ui-modal';
+      const isHud = k === 'ui-hud';
+      const W = 200;
+      const H = 132;
+      const fx = isModal ? 14 : isHud ? 58 : 8;
+      const fy = isModal ? 10 : 6;
+      const fw = isModal ? 172 : isHud ? 134 : 184;
+      const fh = isModal ? 112 : 120;
+      const ix = fx + 8;
+      const iw = fw - 16;
+
+      const out = [];
+      if (isModal) {
+        // Dimmed host page frame behind modal
+        out.push('<rect x="3" y="3" width="194" height="126" rx="9" fill="var(--cs-bg)" stroke="var(--cs-hairline)"/>');
+        out.push('<rect x="10" y="14" width="38" height="104" rx="4" fill="var(--cs-canvas)" opacity="0.7"/>');
+        out.push('<rect x="' + fx + '" y="' + fy + '" width="' + fw + '" height="' + fh + '" rx="9" fill="var(--cs-card)" stroke="var(--cs-blue)" stroke-width="1.2"/>');
+      } else if (isHud) {
+        // Host page on left + floating sidebar/HUD panel on right
+        out.push('<rect x="3" y="3" width="194" height="126" rx="9" fill="var(--cs-bg)" stroke="var(--cs-hairline)"/>');
+        out.push('<rect x="10" y="12" width="42" height="108" rx="5" fill="var(--cs-canvas)"/>');
+        out.push('<rect x="' + fx + '" y="' + fy + '" width="' + fw + '" height="' + fh + '" rx="9" fill="var(--cs-card)" stroke="var(--cs-blue)" stroke-width="1.2"/>');
+      } else {
+        out.push('<rect x="' + fx + '" y="' + fy + '" width="' + fw + '" height="' + fh + '" rx="9" fill="var(--cs-card)" stroke="var(--cs-hairline-strong)"/>');
+      }
+
+      const list = blocks.slice(0, 5);
+      let y = fy + 9;
+      const maxY = fy + fh - 6;
+
+      for (const b of list) {
+        if (y + 14 > maxY) break;
+        if (b.type === 'header') {
+          out.push('<text x="' + ix + '" y="' + (y + 8) + '" font-size="7.8" font-weight="600" fill="var(--cs-ink)">' + escHtml((b.label || '').slice(0, 18)) + '</text>');
+          out.push('<circle cx="' + (ix + iw - 4) + '" cy="' + (y + 5.5) + '" r="3.4" fill="var(--cs-canvas)"/>');
+          out.push('<line x1="' + fx + '" y1="' + (y + 13) + '" x2="' + (fx + fw) + '" y2="' + (y + 13) + '" stroke="var(--cs-hairline)"/>');
+          y += 18;
+        } else if (b.type === 'tabs') {
+          const items = (b.items || ['Tab 1', 'Tab 2']).slice(0, 3);
+          out.push('<rect x="' + ix + '" y="' + y + '" width="' + iw + '" height="16" rx="5" fill="var(--cs-canvas)"/>');
+          const tw = (iw - 4) / items.length;
+          items.forEach((it, i) => {
+            const tx = ix + 2 + i * tw;
+            if (i === 0) out.push('<rect x="' + tx + '" y="' + (y + 2) + '" width="' + (tw - 1) + '" height="12" rx="3.5" fill="var(--cs-card)" stroke="var(--cs-hairline)"/>');
+            out.push('<text x="' + (tx + tw / 2) + '" y="' + (y + 10.5) + '" text-anchor="middle" font-size="6.6" font-weight="' + (i === 0 ? '600' : '500') + '" fill="' + (i === 0 ? 'var(--cs-ink)' : 'var(--cs-muted)') + '">' + escHtml(it.slice(0, 7)) + '</text>');
+          });
+          y += 20;
+        } else if (b.type === 'search') {
+          out.push('<rect x="' + ix + '" y="' + y + '" width="' + iw + '" height="15" rx="5" fill="var(--cs-canvas)" stroke="var(--cs-hairline)"/>');
+          out.push('<circle cx="' + (ix + 7) + '" cy="' + (y + 7.2) + '" r="2.5" fill="none" stroke="var(--cs-faint)" stroke-width="1"/>');
+          out.push('<text x="' + (ix + 13) + '" y="' + (y + 10) + '" font-size="6.6" fill="var(--cs-faint)">' + escHtml((b.label || 'Search').slice(0, 18)) + '</text>');
+          y += 19;
+        } else if (b.type === 'toggle') {
+          const isOn = b.on !== false;
+          out.push('<rect x="' + ix + '" y="' + y + '" width="' + iw + '" height="16" rx="4.5" fill="var(--cs-canvas)"/>');
+          out.push('<text x="' + (ix + 6) + '" y="' + (y + 10.5) + '" font-size="6.8" fill="var(--cs-ink)">' + escHtml((b.label || '').slice(0, 16)) + '</text>');
+          const swX = ix + iw - 20;
+          out.push('<rect x="' + swX + '" y="' + (y + 3.5) + '" width="15" height="9" rx="4.5" fill="' + (isOn ? 'var(--cs-blue)' : 'var(--cs-hairline-strong)') + '"/>');
+          out.push('<circle cx="' + (isOn ? swX + 10.5 : swX + 4.5) + '" cy="' + (y + 8) + '" r="3.2" fill="#fff"/>');
+          y += 19.5;
+        } else if (b.type === 'slider') {
+          const pct = Math.max(10, Math.min(92, typeof b.value === 'number' ? b.value : 65)) / 100;
+          out.push('<text x="' + ix + '" y="' + (y + 7) + '" font-size="6.6" fill="var(--cs-muted)">' + escHtml((b.label || '').slice(0, 18)) + '</text>');
+          const ty = y + 12;
+          out.push('<rect x="' + ix + '" y="' + ty + '" width="' + iw + '" height="3.2" rx="1.6" fill="var(--cs-hairline-strong)"/>');
+          out.push('<rect x="' + ix + '" y="' + ty + '" width="' + Math.round(iw * pct) + '" height="3.2" rx="1.6" fill="var(--cs-blue)"/>');
+          out.push('<circle cx="' + (ix + Math.round(iw * pct)) + '" cy="' + (ty + 1.6) + '" r="3.6" fill="var(--cs-card)" stroke="var(--cs-blue)" stroke-width="1.2"/>');
+          y += 20;
+        } else if (b.type === 'chips') {
+          const items = (b.items || []).slice(0, 4);
+          const cols = b.colors || [];
+          const cw = Math.floor((iw - (items.length - 1) * 4) / Math.max(1, items.length));
+          items.forEach((it, i) => {
+            const cx = ix + i * (cw + 4);
+            const dot = cols[i];
+            out.push('<rect x="' + cx + '" y="' + y + '" width="' + cw + '" height="15" rx="7.5" fill="' + (i === 0 ? 'var(--cs-blue-soft)' : 'var(--cs-canvas)') + '" stroke="' + (i === 0 ? 'var(--cs-blue)' : 'var(--cs-hairline)') + '" stroke-width="0.8"/>');
+            if (dot) {
+              out.push('<circle cx="' + (cx + 7) + '" cy="' + (y + 7.5) + '" r="2.6" fill="' + dot + '"/>');
+              out.push('<text x="' + (cx + 12) + '" y="' + (y + 10) + '" font-size="6.3" fill="var(--cs-ink)">' + escHtml(it.slice(0, 5)) + '</text>');
+            } else {
+              out.push('<text x="' + (cx + cw / 2) + '" y="' + (y + 10) + '" text-anchor="middle" font-size="6.4" fill="' + (i === 0 ? 'var(--cs-blue)' : 'var(--cs-ink)') + '">' + escHtml(it.slice(0, 6)) + '</text>');
+            }
+          });
+          y += 19;
+        } else if (b.type === 'list') {
+          const items = (b.items || []).slice(0, 3);
+          const cols = b.colors || ['#3B82F6', '#F59E0B', '#10B981'];
+          items.forEach((it, i) => {
+            if (y + 14 > maxY) return;
+            out.push('<rect x="' + ix + '" y="' + y + '" width="' + iw + '" height="13.5" rx="3.5" fill="var(--cs-canvas)"/>');
+            out.push('<circle cx="' + (ix + 7) + '" cy="' + (y + 6.8) + '" r="2.4" fill="' + (cols[i % cols.length] || 'var(--cs-blue)') + '"/>');
+            out.push('<text x="' + (ix + 13) + '" y="' + (y + 9.2) + '" font-size="6.6" fill="var(--cs-ink)">' + escHtml(it.slice(0, 18)) + '</text>');
+            y += 16;
+          });
+          y += 2;
+        } else if (b.type === 'highlight') {
+          out.push('<rect x="' + ix + '" y="' + y + '" width="' + Math.round(iw * 0.85) + '" height="4" rx="2" fill="var(--cs-hairline-strong)"/>');
+          out.push('<rect x="' + ix + '" y="' + (y + 7) + '" width="' + Math.round(iw * 0.72) + '" height="10" rx="2.5" fill="rgba(250,204,21,0.34)"/>');
+          out.push('<text x="' + (ix + 4) + '" y="' + (y + 14.3) + '" font-size="6.5" fill="var(--cs-ink)">' + escHtml((b.label || '').slice(0, 16)) + '</text>');
+          out.push('<rect x="' + (ix + iw - 42) + '" y="' + (y + 19) + '" width="42" height="11" rx="5.5" fill="var(--cs-ink)"/>');
+          out.push('<circle cx="' + (ix + iw - 33) + '" cy="' + (y + 24.5) + '" r="2.2" fill="#FACC15"/>');
+          out.push('<circle cx="' + (ix + iw - 24) + '" cy="' + (y + 24.5) + '" r="2.2" fill="#34D399"/>');
+          out.push('<circle cx="' + (ix + iw - 15) + '" cy="' + (y + 24.5) + '" r="2.2" fill="#38BDF8"/>');
+          y += 33;
+        } else if (b.type === 'actions') {
+          const items = (b.items || ['Cancel', 'Save']).slice(0, 2);
+          const ay = Math.min(maxY - 15, y + 2);
+          if (items.length === 1) {
+            out.push('<rect x="' + ix + '" y="' + ay + '" width="' + iw + '" height="15" rx="4.5" fill="var(--cs-primary)"/>');
+            out.push('<text x="' + (ix + iw / 2) + '" y="' + (ay + 10) + '" text-anchor="middle" font-size="6.8" font-weight="600" fill="var(--cs-primary-fg)">' + escHtml(items[0].slice(0, 12)) + '</text>');
+          } else {
+            const bw = Math.floor((iw - 5) / 2);
+            out.push('<rect x="' + ix + '" y="' + ay + '" width="' + bw + '" height="15" rx="4.5" fill="var(--cs-canvas)" stroke="var(--cs-hairline)"/>');
+            out.push('<text x="' + (ix + bw / 2) + '" y="' + (ay + 10) + '" text-anchor="middle" font-size="6.6" fill="var(--cs-ink)">' + escHtml(items[0].slice(0, 8)) + '</text>');
+            out.push('<rect x="' + (ix + bw + 5) + '" y="' + ay + '" width="' + bw + '" height="15" rx="4.5" fill="var(--cs-primary)"/>');
+            out.push('<text x="' + (ix + bw + 5 + bw / 2) + '" y="' + (ay + 10) + '" text-anchor="middle" font-size="6.6" font-weight="600" fill="var(--cs-primary-fg)">' + escHtml(items[1].slice(0, 8)) + '</text>');
+          }
+          y = ay + 18;
+        }
+      }
+
+      return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="194">' + out.join('') + '</svg>';
+    }
+
     function renderPrototypeSvg(node) {
       const k = node.prototypeKind;
       const isUiKind = k === 'ui-modal' || k === 'ui-hud' || k === 'ui-card-flow' || k === 'ui-card-diff' || k === 'ui-card' || k === 'ui-page';
@@ -1211,6 +1336,9 @@ export function renderVisualProjectMapHtml(
       }
 
       const spec = node.prototypeSpec;
+      if (spec && Array.isArray(spec.blocks) && spec.blocks.length > 0) {
+        return renderWireframeBlocksSvg(k, spec.blocks);
+      }
       if (spec && Array.isArray(spec.elements) && spec.elements.length > 0) {
         const els = spec.elements.slice(0, 4);
         const isModal = k === 'ui-modal';
