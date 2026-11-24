@@ -373,6 +373,7 @@ const APPLE_CSS = `
     background: var(--cs-card);
     color: var(--cs-ink);
     cursor: pointer;
+    user-select: none;
     box-shadow: var(--cs-shadow);
     transition: border-color 0.14s ease, background 0.14s ease, opacity 0.14s ease, transform 0.12s ease;
     min-width: 0;
@@ -898,6 +899,7 @@ export function renderVisualProjectMapHtml(
     const footHintEl = document.getElementById('cs-foot-hint');
     const legendUpEl = document.getElementById('cs-leg-up');
     const legendDownEl = document.getElementById('cs-leg-down');
+    const legendWarnEl = document.getElementById('cs-leg-warn');
     const faultTextEl = document.getElementById('cs-fault-text');
     const collapsedPillEl = document.getElementById('cs-collapsed-pill');
     const backdropEl = document.getElementById('cs-backdrop');
@@ -966,6 +968,7 @@ export function renderVisualProjectMapHtml(
         zones: { frontend: '前端', backend: '服务', core: '核心', shared: '基础' },
         uses: '依赖',
         usedBy: '影响',
+        warnLegend: '建议拆分',
         none: '无',
         more: (n) => '+ 其余 ' + n + ' 项',
         less: '收起',
@@ -1004,6 +1007,7 @@ export function renderVisualProjectMapHtml(
         zones: { frontend: 'Frontend', backend: 'Backend', core: 'Core', shared: 'Shared' },
         uses: 'Uses',
         usedBy: 'Used by',
+        warnLegend: 'Large',
         none: 'None',
         more: (n) => '+ ' + n + ' more',
         less: 'Less',
@@ -1556,6 +1560,11 @@ export function renderVisualProjectMapHtml(
       });
       if (legendUpEl) legendUpEl.innerHTML = '<span class="cs-dash"></span>' + t.uses;
       if (legendDownEl) legendDownEl.innerHTML = '<span class="cs-dash"></span>' + t.usedBy;
+      if (legendWarnEl) {
+        const hasAnyWarn = Boolean(DATA.healthSummary && DATA.healthSummary.warnFilesCount > 0);
+        legendWarnEl.style.display = hasAnyWarn ? 'inline-flex' : 'none';
+        legendWarnEl.innerHTML = '<span class="cs-dot-warn" style="margin-right:4px"></span>' + t.warnLegend;
+      }
       const fb = document.getElementById('cs-open-fault');
       if (fb) fb.textContent = t.faultBtn;
       if (faultTextEl) faultTextEl.textContent = faultHeadline();
@@ -2044,6 +2053,7 @@ export function renderVisualProjectMapHtml(
       <footer class="cs-foot">
         <span class="cs-foot-hint" id="cs-foot-hint"></span>
         <span class="cs-foot-legend">
+          <span id="cs-leg-warn" style="color:var(--cs-amber);align-items:center"></span>
           <span id="cs-leg-up" style="color:var(--cs-blue)"></span>
           <span id="cs-leg-down" style="color:var(--cs-amber)"></span>
         </span>
