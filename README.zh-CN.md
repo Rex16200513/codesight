@@ -37,6 +37,38 @@
 
 ---
 
+## 适合谁用？
+
+CodeSight 同时兼顾了**非技术创作者的直观理解**与**工程师的精准排错**：
+
+- **产品经理 / 设计师 / 不太懂代码的 Vibe Coding 玩家**
+  - 不用一行行读源码，也能一眼看清整个项目的目录结构与前后端分层；
+  - 直观知道 **前端里哪些组件决定了什么界面显示**（点击任意组件即可看到对应的弹窗/页面/卡片原型示意与依赖关系）；
+  - 一眼识别 **后端与底层哪些文件是核心（Core）共享模块**，改需求前清楚哪里可以放心微调、哪里动一发而牵全身。
+- **研发工程师 / 全栈 / 独立开发者**
+  - 把终端报错或 `git diff` 直接映射到 **具体的出问题代码块、AST 符号位置与跨文件调用链**，省去翻几十个文件定位的时间；
+  - 修改共享类型或接口前，精准查看 **改动波及范围（直接/间接影响文件）与安全区文件数**；
+  - 以 **0 Token 成本** 拦住 AI 偷偷塞进去的 `as any`、空 `catch {}` 和被删掉的校验守卫，并在“内部兼容修复”与“多文件联动升级”之间先做架构决策。
+
+---
+
+## 我们在 GraphRAG 基础上对代码做了什么处理？
+
+CodeSight 不是把代码随便切块丢进向量库，而是在本地对代码执行了一套**确定性的 5 步 GraphRAG 处理管线**：
+
+1. **增量真 AST 与多语言解析**（`astParser.ts`、`repoIndexer.ts`）
+   对 TypeScript / JavaScript / TSX / JSX 直接调用 **TypeScript 编译器官方 AST**（杜绝正则误判），同时支持 **Python** 相对/点号 import 与函数调用抽取；结合 SHA-256 哈希缓存（`.codesight/index.json`），未改动文件毫秒级跳过。
+2. **文件级 + 符号级双层图谱构建**（`codeGraph.ts`、`graphProvider.ts`、`mcpGraphProvider.ts`）
+   同时构建 **文件依赖图**（计算入度、出度、传递下游波及面与 Core 核心枢纽）和 **跨文件函数/组件调用图**（精确到函数、类与 React JSX 组件的调用行号），并支持通过 stdio 挂载外部开源 Graph-RAG MCP 增强图谱。
+3. **BM25 + 双语向量 + 1-Hop 图传播 RRF 混合检索**（`embeddingIndex.ts`）
+   融合 **Okapi BM25 词法匹配**、**中英双语语义向量** 与 **1 跳依赖图关联增强**（并对 `index.ts` 汇总导出文件做降权防噪声），针对任意自然语言提问或报错，精准提取约 **3% 的最小核心代码切片**（平均节省 ~97% Token）。
+4. **面向人类理解的架构分层与原型抽象**（`architecturePlanner.ts`、`visualMap.ts`）
+   把底层枯燥的图节点翻译成 **前端 / 服务 / 核心基础** 竖排架构视图、大白话文件职责，并根据组件与导出特征自动推断 **UI 线框原型或服务流转示意**（默认 0-Token 本地启发式识别，也支持宿主 Agent 注入 `architectureOverride` 或可选 BYOK 小模型缓存）。
+5. **确定性报错投影与 0-Token 静默回归守卫**（`staticAnalyzer.ts`、`comprehensionEngine.ts`）
+   自动剥离 `node_modules` 噪声栈，将报错和 `git diff` 精确投影到 AST 符号与爆炸半径上，0 Token 检测 `REMOVED_GUARD`（删守卫）、`SWALLOWED_ERROR`（空 catch）、`TYPE_ESCAPE_HATCH`（`as any`），最终生成带架构权衡的可选修复指令。
+
+---
+
 ## 为什么选择 CodeSight
 
 | 能力 | 直接问普通 AI Agent | 接入 CodeSight 后 |

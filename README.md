@@ -37,6 +37,38 @@ As AI agents edit across dozens of files, two failure modes appear repeatedly: *
 
 ---
 
+## Who Is CodeSight For?
+
+CodeSight bridges the gap between **visual product thinking** and **precise code-level debugging**:
+
+- **Product Managers, Designers & Non-Technical Builders (Vibe Coders)**
+  - Grasp the overall repository structure in seconds without reading raw source code.
+  - See **which frontend components control what appears on screen** — click any UI file to preview its inferred wireframe prototype (page, modal, HUD, card) and relationships.
+  - Spot **which backend and shared modules are Core hubs** (high downstream usage) so you know what is safe to tweak vs. what needs extra care before prompting an AI agent.
+- **Engineers & Full-Stack Developers**
+  - Jump straight from a compiler/runtime error or `git diff` to the **exact code block, line range, and cross-file AST callers** involved.
+  - Inspect **blast radius** (direct & indirect downstream impact) and **safe zone count** before modifying shared types, schemas, or APIs.
+  - Catch **silent regressions** (`as any`, empty `catch {}`, removed auth/validation guards) deterministically with **0 LLM tokens**, and choose between a minimal backward-compatible fix or a coordinated multi-file update.
+
+---
+
+## What CodeSight Does on Top of GraphRAG
+
+Instead of feeding raw chunks of text into an LLM, CodeSight runs a deterministic **5-stage local GraphRAG pipeline** over your repository:
+
+1. **Incremental AST & Multi-Language Parsing** (`astParser.ts`, `repoIndexer.ts`)
+   Parses TypeScript / JavaScript / TSX / JSX with the real **TypeScript Compiler API** (eliminating regex false positives) alongside a **Python** relative/dotted import & call parser, with SHA-256 hash caching in `.codesight/index.json` for millisecond incremental updates.
+2. **Dual-Layer Graph Construction** (`codeGraph.ts`, `graphProvider.ts`, `mcpGraphProvider.ts`)
+   Builds both a **File Dependency Graph** (in-degree, out-degree, transitive downstream reach, Core-hub detection) and a **Cross-File Symbol Call Graph** (exact function, class, and React JSX component callers with line numbers), with pluggable external stdio Graph-RAG MCP support.
+3. **Hybrid Retrieval with Reciprocal Rank Fusion** (`embeddingIndex.ts`)
+   Combines **Okapi BM25** + **bilingual semantic vectors** + **1-hop graph propagation** (with barrel `index.ts` damping) to surface the exact minimal code slice — typically reducing whole-repo LLM context by **~97%**.
+4. **Semantic Architecture & Prototype Abstraction** (`architecturePlanner.ts`, `visualMap.ts`)
+   Transforms raw graph nodes into human-readable **Frontend / Backend / Shared** vertical layers, plain-language roles, and auto-inferred **UI wireframe / API flow prototypes** — powered by 0-token heuristics, host-agent `architectureOverride` caching, or optional BYOK LLM planning.
+5. **Deterministic Error Projection & Silent Regression Guard** (`staticAnalyzer.ts`, `comprehensionEngine.ts`)
+   Strips stack-trace noise, projects errors and `git diff` hunks onto exact AST symbols and blast radius, flags `REMOVED_GUARD` / `SWALLOWED_ERROR` / `TYPE_ESCAPE_HATCH` at **0 tokens**, and generates scoped architectural fix options for your AI agent.
+
+---
+
 ## Why CodeSight
 
 | Capability | Raw AI Agent | With CodeSight |
