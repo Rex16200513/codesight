@@ -98,14 +98,14 @@ export const UI_SHEETS_CLIENT_JS = `
         '</div>';
       backdropEl.classList.add('is-open');
       const ta = document.getElementById('cs-prompt-ta');
-      if (ta) { ta.value = promptText; ta.focus(); ta.select(); ta.setSelectionRange(0, textLen(promptText)); }
+      if (ta) { ta.value = promptText; ta.focus({ preventScroll: true }); ta.select(); ta.setSelectionRange(0, textLen(promptText)); }
       document.getElementById('cs-close-btn')?.addEventListener('click', closeSheet);
       document.getElementById('cs-open-set-from-proto')?.addEventListener('click', () => openSettingsSheet());
       const copyBtn = document.getElementById('cs-copy-proto-prompt');
       copyBtn?.addEventListener('click', async () => {
         const ok = await copyTextReliable(promptText);
         copyBtn.textContent = ok ? t.copied : t.pressCopy;
-        if (ta) { ta.focus(); ta.select(); }
+        if (ta) { ta.focus({ preventScroll: true }); ta.select(); }
       });
     }
     function textLen(s) { return String(s || '').length; }
@@ -310,53 +310,44 @@ export const UI_SHEETS_CLIENT_JS = `
         btn.addEventListener('click', () => openFileSheet(btn.dataset.jump));
       });
 
+      const dispatchOrCopy = async (btn, promptText) => {
+        if (!btn) return;
+        const old = btn.dataset.origLabel || btn.textContent;
+        btn.dataset.origLabel = old;
+
+        // 1. Copy IMMEDIATELY while synchronous user gesture is still active (never expire after async timeout!)
+        const ok = await copyTextReliable(promptText);
+        window.parent?.postMessage({ type: 'codesight:actionPrompt', nodeId: node.id, prompt: promptText }, '*');
+
+        if (ok) {
+          btn.textContent = t.copied;
+          setTimeout(() => { btn.textContent = old; }, 1600);
+        } else {
+          btn.textContent = t.pressCopy;
+          showPromptBox(promptText, false);
+        }
+
+        // 2. In parallel, dispatch via standard MCP Apps host bridge if supported
+        const msgReply = await callMcpAppHost('ui/message', { role: 'user', content: [{ type: 'text', text: promptText }] }, 800);
+        if (msgReply && !msgReply.error) {
+          btn.textContent = t.protoHostSent;
+          setTimeout(() => { btn.textContent = old; }, 1600);
+        }
+      };
+
       const wireCopy = (btn, promptText) => {
         if (!btn) return;
-        btn.addEventListener('click', async () => {
-          const msgReply = await callMcpAppHost('ui/message', { role: 'user', content: [{ type: 'text', text: promptText }] }, 800);
-          if (msgReply && !msgReply.error) {
-            btn.textContent = t.protoHostSent;
-            setTimeout(() => { btn.textContent = btn.dataset.origLabel || btn.textContent; }, 1600);
-            return;
-          }
-          const ok = await copyTextReliable(promptText);
-          window.parent?.postMessage({ type: 'codesight:actionPrompt', nodeId: node.id, prompt: promptText }, '*');
-          const old = btn.dataset.origLabel || btn.textContent;
-          btn.dataset.origLabel = old;
-          if (ok) {
-            btn.textContent = t.copied;
-            setTimeout(() => { btn.textContent = old; }, 1600);
-          } else {
-            btn.textContent = t.pressCopy;
-            showPromptBox(promptText, false);
-          }
-        });
+        btn.addEventListener('click', () => { void dispatchOrCopy(btn, promptText); });
       };
 
       if (primaryTip) wireCopy(document.getElementById('cs-act-split'), primaryTip.refactorPrompt);
 
       if (isFault && DATA.activeDiagnosis.directions.length > 0) {
         const fixBtn = document.getElementById('cs-act-fix');
-        fixBtn?.addEventListener('click', async () => {
+        fixBtn?.addEventListener('click', () => {
           const checked = sheetEl.querySelector('input[name="cs_dir"]:checked');
           const chosen = DATA.activeDiagnosis.directions.find(d => d.id === checked?.value) || DATA.activeDiagnosis.directions[0];
-          const old = fixBtn.dataset.origLabel || fixBtn.textContent;
-          fixBtn.dataset.origLabel = old;
-          const msgReply = await callMcpAppHost('ui/message', { role: 'user', content: [{ type: 'text', text: chosen.surgicalPrompt }] }, 800);
-          if (msgReply && !msgReply.error) {
-            fixBtn.textContent = t.protoHostSent;
-            setTimeout(() => { fixBtn.textContent = old; }, 1600);
-            return;
-          }
-          const ok = await copyTextReliable(chosen.surgicalPrompt);
-          window.parent?.postMessage({ type: 'codesight:actionPrompt', nodeId: node.id, prompt: chosen.surgicalPrompt }, '*');
-          if (ok) {
-            fixBtn.textContent = t.copied;
-            setTimeout(() => { fixBtn.textContent = old; }, 1600);
-          } else {
-            fixBtn.textContent = t.pressCopy;
-            showPromptBox(chosen.surgicalPrompt, false);
-          }
+          void dispatchOrCopy(fixBtn, chosen.surgicalPrompt);
         });
       } else {
         const postEditHook = ' After completing the changes, call \`codesight_map\` (and \`codesight_diagnose\` with \`useGit: true\`) to verify zero regressions and show the updated CodeSight map.';

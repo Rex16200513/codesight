@@ -151,10 +151,9 @@ export function CodeSightHUD({
         const ta = document.createElement('textarea');
         ta.value = surgicalPrompt;
         ta.setAttribute('readonly', '');
-        ta.style.position = 'fixed';
-        ta.style.top = '-9999px';
+        ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:0;opacity:0;pointer-events:none;';
         document.body.appendChild(ta);
-        ta.focus();
+        ta.focus({ preventScroll: true });
         ta.select();
         ok = document.execCommand('copy');
         document.body.removeChild(ta);

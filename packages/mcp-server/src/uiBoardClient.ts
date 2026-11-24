@@ -223,19 +223,20 @@ export const UI_BOARD_CLIENT_JS = `
 
     function execCopyFallback(text) {
       try {
+        const prevFocus = document.activeElement;
         const ta = document.createElement('textarea');
         ta.value = text;
         ta.setAttribute('readonly', '');
-        ta.style.position = 'fixed';
-        ta.style.top = '-9999px';
-        ta.style.left = '-9999px';
-        ta.style.opacity = '0';
+        ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:0;opacity:0;pointer-events:none;';
         document.body.appendChild(ta);
-        ta.focus();
+        ta.focus({ preventScroll: true });
         ta.select();
         ta.setSelectionRange(0, text.length);
         const ok = document.execCommand('copy');
         document.body.removeChild(ta);
+        if (prevFocus && typeof prevFocus.focus === 'function') {
+          try { prevFocus.focus({ preventScroll: true }); } catch {}
+        }
         return Boolean(ok);
       } catch {
         return false;
@@ -264,7 +265,7 @@ export const UI_BOARD_CLIENT_JS = `
       ta.value = text;
       box.classList.add('is-open');
       if (tip) tip.textContent = copiedOk ? tr().copied : tr().promptHint;
-      ta.focus();
+      ta.focus({ preventScroll: true });
       ta.select();
       ta.setSelectionRange(0, text.length);
     }
