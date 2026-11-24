@@ -340,10 +340,16 @@ export const UI_SHEETS_CLIENT_JS = `
         fixBtn?.addEventListener('click', async () => {
           const checked = sheetEl.querySelector('input[name="cs_dir"]:checked');
           const chosen = DATA.activeDiagnosis.directions.find(d => d.id === checked?.value) || DATA.activeDiagnosis.directions[0];
-          const ok = await copyTextReliable(chosen.surgicalPrompt);
-          window.parent?.postMessage({ type: 'codesight:actionPrompt', nodeId: node.id, prompt: chosen.surgicalPrompt }, '*');
           const old = fixBtn.dataset.origLabel || fixBtn.textContent;
           fixBtn.dataset.origLabel = old;
+          const msgReply = await callMcpAppHost('ui/message', { role: 'user', content: [{ type: 'text', text: chosen.surgicalPrompt }] }, 800);
+          if (msgReply && !msgReply.error) {
+            fixBtn.textContent = t.protoHostSent;
+            setTimeout(() => { fixBtn.textContent = old; }, 1600);
+            return;
+          }
+          const ok = await copyTextReliable(chosen.surgicalPrompt);
+          window.parent?.postMessage({ type: 'codesight:actionPrompt', nodeId: node.id, prompt: chosen.surgicalPrompt }, '*');
           if (ok) {
             fixBtn.textContent = t.copied;
             setTimeout(() => { fixBtn.textContent = old; }, 1600);
@@ -353,9 +359,10 @@ export const UI_SHEETS_CLIENT_JS = `
           }
         });
       } else {
+        const postEditHook = ' After completing the changes, call \`codesight_map\` (and \`codesight_diagnose\` with \`useGit: true\`) to verify zero regressions and show the updated CodeSight map.';
         const editPrompt = callers >= 5
-          ? '[CodeSight Safe Edit] Modify \`' + node.path + '\` while keeping exported signatures backward-compatible (' + callers + ' callers).'
-          : '[CodeSight Edit] Update \`' + node.path + '\` cleanly. Verify ' + (node.directDownstreamPaths.join(', ') || 'build & tests') + '.';
+          ? '[CodeSight Safe Edit] Modify \`' + node.path + '\` while keeping exported signatures backward-compatible (' + callers + ' callers).' + postEditHook
+          : '[CodeSight Edit] Update \`' + node.path + '\` cleanly. Verify ' + (node.directDownstreamPaths.join(', ') || 'build & tests') + '.' + postEditHook;
         const explainPrompt = '[CodeSight Explain] Concisely explain \`' + node.path + '\` with its direct dependencies (' + (node.upstreamPaths.join(', ') || 'none') + ').';
         wireCopy(document.getElementById('cs-act-edit'), editPrompt);
         wireCopy(document.getElementById('cs-act-explain'), explainPrompt);

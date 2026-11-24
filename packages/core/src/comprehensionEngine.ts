@@ -629,6 +629,8 @@ export async function projectProblemOntoRepo(
   }
 
   const directions: FixDirection[] = [];
+  const postFixHook =
+    ' After applying the fix, call `codesight_diagnose` (with `useGit: true`) to verify zero silent regressions and refresh the CodeSight visual map.';
   if (primaryNode && blastRadius && (input.rawError || input.rawDiff)) {
     const impactCount = blastRadius.directImpact.length + blastRadius.indirectImpact.length;
     const impactListStr = [...blastRadius.directImpact, ...blastRadius.indirectImpact]
@@ -644,7 +646,7 @@ export async function projectProblemOntoRepo(
         affectedFilesCount: 1,
         tradeoff: '只改 1 个文件，最稳妥，不会引发连锁报错',
         recommended: true,
-        surgicalPrompt: `[CodeSight Fix Plan: Minimal Safe Fix]\nKeep the existing exported signature/contract of \`${primaryNode.path}\`${primarySymbol ? ` (${primarySymbol.name})` : ''} unchanged so none of its ${impactCount} dependent files (${impactListStr}) break. Fix the error safely inside this file without using \`as any\` or empty \`catch\`.`,
+        surgicalPrompt: `[CodeSight Fix Plan: Minimal Safe Fix]\nKeep the existing exported signature/contract of \`${primaryNode.path}\`${primarySymbol ? ` (${primarySymbol.name})` : ''} unchanged so none of its ${impactCount} dependent files (${impactListStr}) break. Fix the error safely inside this file without using \`as any\` or empty \`catch\`.${postFixHook}`,
       });
       directions.push({
         id: 'dir-cascade-upgrade',
@@ -652,7 +654,7 @@ export async function projectProblemOntoRepo(
         strategy: `如果你确实要改 ${primaryNode.name} 的数据结构或参数，让 AI 按依赖关系把相关的 ${impactCount + 1} 个文件一次改齐。`,
         affectedFilesCount: impactCount + 1,
         tradeoff: '改动文件较多，改完后需要跑一遍检查确认没漏改',
-        surgicalPrompt: `[CodeSight Fix Plan: Update File + All Dependents]\nUpdate \`${primaryNode.path}\`${primaryLine ? ` (line ${primaryLine})` : ''} AND synchronously update all ${impactCount} dependent files (${impactListStr}). Run typecheck and tests afterward to make sure nothing breaks.`,
+        surgicalPrompt: `[CodeSight Fix Plan: Update File + All Dependents]\nUpdate \`${primaryNode.path}\`${primaryLine ? ` (line ${primaryLine})` : ''} AND synchronously update all ${impactCount} dependent files (${impactListStr}). Run typecheck and tests afterward to make sure nothing breaks.${postFixHook}`,
       });
     } else if (blastRadius.riskLevel === 'medium-bridge') {
       directions.push({
@@ -662,7 +664,7 @@ export async function projectProblemOntoRepo(
         affectedFilesCount: blastRadius.directImpact.length + 1,
         tradeoff: '改动范围小，直接修根因',
         recommended: true,
-        surgicalPrompt: `[CodeSight Fix Plan: Fix + Check Callers]\nFix the issue in \`${primaryNode.path}\`${primaryLine ? ` around line ${primaryLine}` : ''}. Verify its direct callers (${blastRadius.directImpact.map((f) => f.path).join(', ')}) continue to work properly. Keep changes minimal.`,
+        surgicalPrompt: `[CodeSight Fix Plan: Fix + Check Callers]\nFix the issue in \`${primaryNode.path}\`${primaryLine ? ` around line ${primaryLine}` : ''}. Verify its direct callers (${blastRadius.directImpact.map((f) => f.path).join(', ')}) continue to work properly. Keep changes minimal.${postFixHook}`,
       });
       if (blastRadius.upstreamDependencies.length > 0) {
         directions.push({
@@ -671,7 +673,7 @@ export async function projectProblemOntoRepo(
           strategy: `不要在这里硬补丁，让 AI 先检查上游文件 ${blastRadius.upstreamDependencies.map((f) => f.name).join('、')} 是不是传错了数据。`,
           affectedFilesCount: 2,
           tradeoff: '从源头解决，避免以后再踩坑',
-          surgicalPrompt: `[CodeSight Fix Plan: Fix At Data Source]\nInspect upstream files of \`${primaryNode.path}\` (${blastRadius.upstreamDependencies.map((f) => f.path).join(', ')}) and fix the data mismatch at its source instead of patching downstream.`,
+          surgicalPrompt: `[CodeSight Fix Plan: Fix At Data Source]\nInspect upstream files of \`${primaryNode.path}\` (${blastRadius.upstreamDependencies.map((f) => f.path).join(', ')}) and fix the data mismatch at its source instead of patching downstream.${postFixHook}`,
         });
       }
     } else {
@@ -682,7 +684,7 @@ export async function projectProblemOntoRepo(
         affectedFilesCount: 1,
         tradeoff: '只改这 1 个文件，零连锁风险',
         recommended: true,
-        surgicalPrompt: `[CodeSight Fix Plan: Safe Local Fix]\nFix the error inside \`${primaryNode.path}\`${primaryLine ? ` near line ${primaryLine}` : ''}. No other files depend on it, so keep the fix self-contained and clean without suppressing errors.`,
+        surgicalPrompt: `[CodeSight Fix Plan: Safe Local Fix]\nFix the error inside \`${primaryNode.path}\`${primaryLine ? ` near line ${primaryLine}` : ''}. No other files depend on it, so keep the fix self-contained and clean without suppressing errors.${postFixHook}`,
       });
       if (blastRadius.upstreamDependencies.length > 0) {
         directions.push({
@@ -691,7 +693,7 @@ export async function projectProblemOntoRepo(
           strategy: `如果是上游文件最近改过格式导致这里不匹配，让 AI 对照 ${blastRadius.upstreamDependencies.slice(0, 2).map((u) => u.name).join(' / ')} 更新本文件。`,
           affectedFilesCount: 1,
           tradeoff: '和项目里的公共定义保持一致',
-          surgicalPrompt: `[CodeSight Fix Plan: Sync With Upstream]\nUpdate \`${primaryNode.path}\` to match the latest exported types/behavior from ${blastRadius.upstreamDependencies.slice(0, 3).map((u) => `\`${u.path}\``).join(', ')}.`,
+          surgicalPrompt: `[CodeSight Fix Plan: Sync With Upstream]\nUpdate \`${primaryNode.path}\` to match the latest exported types/behavior from ${blastRadius.upstreamDependencies.slice(0, 3).map((u) => `\`${u.path}\``).join(', ')}.${postFixHook}`,
         });
       }
     }

@@ -162,6 +162,8 @@ function computeHealthTips(
   const tips: FileHealthTip[] = [];
   const lines = file.lines;
   const symCount = file.symbols?.length ?? 0;
+  const postRefactorHook =
+    ' After completing the changes, call `codesight_map` (and `codesight_diagnose` with `useGit: true`) to verify zero regressions and show the updated CodeSight map.';
 
   if (downstreamReach >= 5 && lines >= 400) {
     tips.push({
@@ -169,7 +171,7 @@ function computeHealthTips(
       level: 'warn',
       zh: `核心共享文件体量较大（${lines} 行 · ${downstreamReach} 处用），建议拆出纯接口/类型与内部实现`,
       en: `Large high-impact hub (${lines} lines · ${downstreamReach} callers) — separate public contract from internals`,
-      refactorPrompt: `[CodeSight Safe Split] Split \`${file.path}\` (${lines} lines, used by ${downstreamReach} files) into smaller focused modules while re-exporting all existing public symbols from \`${file.path}\` so zero callers break.`,
+      refactorPrompt: `[CodeSight Safe Split] Split \`${file.path}\` (${lines} lines, used by ${downstreamReach} files) into smaller focused modules while re-exporting all existing public symbols from \`${file.path}\` so zero callers break.${postRefactorHook}`,
     });
   } else if (lines >= 600) {
     tips.push({
@@ -177,7 +179,7 @@ function computeHealthTips(
       level: 'warn',
       zh: `${isUi ? 'UI 组件' : '文件'}代码过长（${lines} 行），建议按职责拆分为多个小模块`,
       en: `${isUi ? 'UI component' : 'Module'} is large (${lines} lines) — split into smaller focused files`,
-      refactorPrompt: `[CodeSight Refactor] Refactor \`${file.path}\` (${lines} lines) into 2-3 cohesive sub-modules (keep existing exports intact and verify build/tests pass).`,
+      refactorPrompt: `[CodeSight Refactor] Refactor \`${file.path}\` (${lines} lines) into 2-3 cohesive sub-modules (keep existing exports intact and verify build/tests pass).${postRefactorHook}`,
     });
   } else if (isUi && lines >= 350) {
     tips.push({
@@ -185,7 +187,7 @@ function computeHealthTips(
       level: 'info',
       zh: `UI 文件偏长（${lines} 行），可抽离独立子组件、模板或交互逻辑`,
       en: `Long UI file (${lines} lines) — consider extracting sub-views or helpers`,
-      refactorPrompt: `[CodeSight UI Split] Extract reusable sub-views or DOM/state helpers out of \`${file.path}\` (${lines} lines) while preserving exact behavior and exports.`,
+      refactorPrompt: `[CodeSight UI Split] Extract reusable sub-views or DOM/state helpers out of \`${file.path}\` (${lines} lines) while preserving exact behavior and exports.${postRefactorHook}`,
     });
   }
 
@@ -195,7 +197,7 @@ function computeHealthTips(
       level: lines >= 500 ? 'warn' : 'info',
       zh: `单文件包含 ${symCount} 个函数/定义，职责较集中，建议抽离独立工具模块`,
       en: `Contains ${symCount} symbols — extract cohesive helper modules to reduce cognitive load`,
-      refactorPrompt: `[CodeSight Modularize] \`${file.path}\` defines ${symCount} symbols across ${lines} lines. Group related helpers into dedicated module(s) and keep public exports backward-compatible.`,
+      refactorPrompt: `[CodeSight Modularize] \`${file.path}\` defines ${symCount} symbols across ${lines} lines. Group related helpers into dedicated module(s) and keep public exports backward-compatible.${postRefactorHook}`,
     });
   }
 
@@ -205,7 +207,7 @@ function computeHealthTips(
       level: 'info',
       zh: `直接依赖 ${outDegree} 个内部文件，耦合度较高，上游变动容易波及此处`,
       en: `Directly imports ${outDegree} internal files — high coupling to upstream modules`,
-      refactorPrompt: `[CodeSight Decouple] Review the ${outDegree} internal imports in \`${file.path}\` and introduce a slim facade or narrow interfaces to reduce coupling.`,
+      refactorPrompt: `[CodeSight Decouple] Review the ${outDegree} internal imports in \`${file.path}\` and introduce a slim facade or narrow interfaces to reduce coupling.${postRefactorHook}`,
     });
   }
 

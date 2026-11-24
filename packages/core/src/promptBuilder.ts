@@ -61,5 +61,11 @@ export function buildSurgicalFixPrompt(
     constraints.forEach((c) => lines.push(`- ${c.directive}`));
   }
 
+  lines.push(
+    '',
+    '### Post-Edit Verification:',
+    '- After applying the fix, call `codesight_diagnose` (with `useGit: true`) to verify zero silent regressions and refresh the CodeSight visual map.'
+  );
+
   return lines.join('\n');
 }
