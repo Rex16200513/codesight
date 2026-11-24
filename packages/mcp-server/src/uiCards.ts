@@ -150,13 +150,13 @@ const BOARD_CSS = `
     cursor: pointer;
   }
 
-  /* Vertical Multi-Column Architecture Columns Inside ONE Big Card */
+  /* Vertical Multi-Column Architecture Columns Inside ONE Big Card (Always side-by-side!) */
   .cs-columns {
     display: grid;
     grid-template-columns: repeat(var(--zone-count, 3), minmax(0, 1fr));
     background: var(--cs-surface);
   }
-  @media (max-width: 680px) {
+  @media (max-width: 380px) {
     .cs-columns {
       grid-template-columns: 1fr;
     }
@@ -166,39 +166,39 @@ const BOARD_CSS = `
     }
   }
   .cs-col {
-    padding: 14px 14px 16px;
+    padding: 12px 10px 14px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 11px;
     min-width: 0;
   }
   .cs-col + .cs-col {
     border-left: 1px dashed var(--cs-border-strong);
   }
   .cs-col.kind-frontend {
-    background: linear-gradient(180deg, rgba(37, 99, 235, 0.045), transparent 45%);
+    background: linear-gradient(180deg, rgba(37, 99, 235, 0.05), transparent 45%);
   }
   .cs-col.kind-backend {
-    background: linear-gradient(180deg, rgba(124, 58, 237, 0.045), transparent 45%);
+    background: linear-gradient(180deg, rgba(124, 58, 237, 0.05), transparent 45%);
   }
   .cs-col-head {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
     padding-bottom: 8px;
     border-bottom: 1px solid var(--cs-border);
   }
   .cs-col-title {
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 700;
     color: var(--cs-ink);
   }
   .cs-col-badge {
     font-family: var(--font-mono, ui-monospace, Menlo, monospace);
-    font-size: 10px;
+    font-size: 9.5px;
     font-weight: 600;
-    padding: 2px 7px;
+    padding: 1.5px 7px;
     border-radius: 999px;
     background: var(--cs-card);
     border: 1px solid var(--cs-border);
@@ -521,7 +521,7 @@ export function renderVisualProjectMapHtml(payload: VisualProjectMapPayload): st
     const backdropEl = document.getElementById('cs-modal-backdrop');
     const modalEl = document.getElementById('cs-modal');
 
-    const MAX_PER_GROUP = 5;
+    const MAX_PER_GROUP = 4;
     const expandedGroups = new Set();
     let hoveredId = null;
     let activeModalId = null;
