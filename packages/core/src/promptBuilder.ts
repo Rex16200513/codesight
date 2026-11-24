@@ -42,7 +42,7 @@ export function buildSurgicalFixPrompt(
   const constraints = DEFAULT_CONSTRAINTS.filter((c) => activeConstraintIds.includes(c.id));
 
   const lines: string[] = [
-    `[GlassBox Surgical Fix Request · ${bundle.id}]`,
+    `[CodeSight Surgical Fix Request · ${bundle.id}]`,
     `Context: ${bundle.headline}`,
     '',
     '### Decisions Made by Developer:',

@@ -1,12 +1,12 @@
-import type { DiagnosticBundle } from '@glassbox/core';
+import type { DiagnosticBundle } from '@codesight/core';
 
 /**
  * MCP Apps (io.modelcontextprotocol/ui) Adapter Blueprint
  *
- * Converts any GlassBox DiagnosticBundle into an MCP UI Resource envelope (`ui://`).
- * When migrating GlassBox into Codex, Orca, Claude Desktop, Cursor, or VS Code MCP Apps,
- * the host simply mounts `@glassbox/ui` inside the sandboxed UI frame and reads `bundle`
- * from `window.__GLASSBOX_BUNDLE__` or `postMessage`.
+ * Converts any CodeSight DiagnosticBundle into an MCP UI Resource envelope (`ui://`).
+ * When migrating CodeSight into Codex, Orca, Claude Desktop, Cursor, or VS Code MCP Apps,
+ * the host simply mounts `@codesight/ui` inside the sandboxed UI frame and reads `bundle`
+ * from `window.__CODESIGHT_BUNDLE__` or `postMessage`.
  */
 export interface MCPUIResourceEnvelope {
   uri: string;
@@ -33,7 +33,7 @@ export function toMCPAppResource(bundle: DiagnosticBundle): MCPUIResourceEnvelop
   });
 
   return {
-    uri: `ui://glassbox/diagnostic/${bundle.id}`,
+    uri: `ui://codesight/diagnostic/${bundle.id}`,
     mimeType: 'text/html+mcp',
     meta: {
       protocol: 'io.modelcontextprotocol/ui',
@@ -43,7 +43,7 @@ export function toMCPAppResource(bundle: DiagnosticBundle): MCPUIResourceEnvelop
     },
     bundle,
     textFallback: [
-      `GlassBox X-Ray (${bundle.sourceAgent}): ${bundle.headline}`,
+      `CodeSight X-Ray (${bundle.sourceAgent}): ${bundle.headline}`,
       ...summaryLines,
       `Token Budget: ${bundle.telemetry.rawInputTokens} -> ${bundle.telemetry.staticPrunedTokens} tok (-${bundle.telemetry.savedPercent}%)`,
     ].join('\n'),

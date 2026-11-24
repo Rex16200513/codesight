@@ -208,7 +208,7 @@ index 11c9e20..92a0f44 100644
     subtitle: '零报错却最致命：让 AI 修复“管理后台偶发白屏”，它直接把 Auth 守卫删了并用空 catch 兜底。',
     sourceAgent: 'Cursor Agent',
     rawError: `(No compiler or runtime error — build passed with 0 warnings!)
-[GlassBox Watcher] Detected 2 high-risk behavioral drifts in latest AI commit.`,
+[CodeSight Watcher] Detected 2 high-risk behavioral drifts in latest AI commit.`,
     rawDiff: `diff --git a/src/middleware/requireAdmin.ts b/src/middleware/requireAdmin.ts
 index 3e89a11..7c201b2 100644
 --- a/src/middleware/requireAdmin.ts
@@ -315,7 +315,7 @@ index 55c01a8..9d312f0 100644
           badge: 'MENTAL MODEL ANCHOR',
           title: '为什么“没有报错”有时比“满屏红字”更危险？',
           narrative:
-            '当前变更横跨鉴权中间件与财务数据查询。GlassBox 静态规则引擎在不消耗任何 LLM Token 的情况下，第一时间拦截了这两处高危行为偏移。',
+            '当前变更横跨鉴权中间件与财务数据查询。CodeSight 静态规则引擎在不消耗任何 LLM Token 的情况下，第一时间拦截了这两处高危行为偏移。',
           flow: [
             {
               id: 'a1',

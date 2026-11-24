@@ -28,8 +28,8 @@ test('AST Call Graph traces cross-file callers of buildSurgicalFixPrompt', async
   const match = trace.matches.find((m) => m.symbol.file.endsWith('promptBuilder.ts'));
   assert.ok(match);
   assert.ok(
-    match.calledBy.some((e) => e.callerFile.endsWith('GlassBoxHUD.tsx')),
-    `Expected GlassBoxHUD.tsx to call buildSurgicalFixPrompt, got: ${JSON.stringify(match.calledBy)}`
+    match.calledBy.some((e) => e.callerFile.endsWith('CodeSightHUD.tsx')),
+    `Expected CodeSightHUD.tsx to call buildSurgicalFixPrompt, got: ${JSON.stringify(match.calledBy)}`
   );
 });
 
@@ -48,7 +48,7 @@ test('McpEnrichedGraphProvider connects to an external stdio MCP Graph-RAG serve
         } else if (msg.method === 'tools/list') {
           process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'query_code_graph' }] } }) + '\\n');
         } else if (msg.method === 'tools/call') {
-          process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text: 'External Graph-RAG: callers include packages/ui/src/components/GlassBoxHUD.tsx' }] } }) + '\\n');
+          process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text: 'External Graph-RAG: callers include packages/ui/src/components/CodeSightHUD.tsx' }] } }) + '\\n');
         }
       }
       buf = '';
@@ -71,7 +71,7 @@ test('McpEnrichedGraphProvider connects to an external stdio MCP Graph-RAG serve
   assert.ok(report.externalGraphHint);
   assert.equal(report.externalGraphHint?.toolUsed, 'query_code_graph');
   assert.ok(
-    report.externalGraphHint?.relatedFiles.includes('packages/ui/src/components/GlassBoxHUD.tsx')
+    report.externalGraphHint?.relatedFiles.includes('packages/ui/src/components/CodeSightHUD.tsx')
   );
   assert.equal(report.primaryTarget?.symbol?.name, 'buildSurgicalFixPrompt');
 });
@@ -95,7 +95,7 @@ test('resolveProjectArchitecture detects Frontend/Backend/Shared separation and 
           title: '前端与桌面层',
           badge: 'Frontend',
           kind: 'frontend',
-          groups: [{ title: '界面视图', files: ['apps/hud/src/App.tsx', 'packages/ui/src/components/GlassBoxHUD.tsx'] }],
+          groups: [{ title: '界面视图', files: ['apps/hud/src/App.tsx', 'packages/ui/src/components/CodeSightHUD.tsx'] }],
         },
         {
           title: '后端与 MCP 插件层',

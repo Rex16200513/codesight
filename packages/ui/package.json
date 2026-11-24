@@ -1,5 +1,5 @@
 {
-  "name": "@glassbox/ui",
+  "name": "@codesight/ui",
   "version": "0.1.0",
   "type": "module",
   "exports": {
@@ -7,13 +7,13 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts"
     },
-    "./styles.css": "./src/styles/glassbox.css"
+    "./styles.css": "./src/styles/codesight.css"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@glassbox/core": "*"
+    "@codesight/core": "*"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",

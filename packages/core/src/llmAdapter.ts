@@ -8,7 +8,7 @@ export interface LLMEnrichmentResult {
   completionTokens: number;
 }
 
-const SYSTEM_PROMPT = `You are GlassBox, an ultra-concise Information Design diagnostic engine for developers doing Vibe Coding.
+const SYSTEM_PROMPT = `You are CodeSight, an ultra-concise Information Design diagnostic engine for developers doing Vibe Coding.
 You receive a PRE-PRUNED static analysis slice (noise already removed).
 Return ONLY valid JSON matching this structure:
 {

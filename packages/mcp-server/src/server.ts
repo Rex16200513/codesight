@@ -8,7 +8,7 @@ import {
   safeGitDiff,
   traceSymbol,
   type HostArchitectureOverride,
-} from '@glassbox/core/engine';
+} from '@codesight/core/engine';
 import { renderTraceCardHtml, renderVisualProjectMapHtml } from './uiCards.ts';
 
 interface JsonRpcRequest {

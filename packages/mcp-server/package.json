@@ -15,7 +15,7 @@
     "test": "node --experimental-strip-types --test src/server.test.ts"
   },
   "dependencies": {
-    "@glassbox/core": "*"
+    "@codesight/core": "*"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

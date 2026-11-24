@@ -39,7 +39,7 @@ export interface GraphSnapshot {
 
 /**
  * Pluggable GraphProvider Contract:
- * Allows GlassBox's Human Comprehension & Decision Layer to sit cleanly on top of:
+ * Allows CodeSight's Human Comprehension & Decision Layer to sit cleanly on top of:
  * 1. Built-in Zero-Docker AST + SQLite/JSON GraphRAG (`BuiltInAstGraphProvider`)
  * 2. External open-source Graph-RAG MCP servers (`McpGraphProvider` -> CodeGraphContext, vitali87/code-graph-rag, sdsrss/code-graph-mcp, Serena)
  */

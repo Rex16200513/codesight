@@ -4,10 +4,10 @@ import {
   analyzeDiagnostic,
   type DiagnosticBundle,
   type LLMConfig,
-} from '@glassbox/core';
-import { GlassBoxHUD, type HUDTheme } from '@glassbox/ui';
+} from '@codesight/core';
+import { CodeSightHUD, type HUDTheme } from '@codesight/ui';
 
-const STORAGE_KEY = 'glassbox_byok_llm_config_v1';
+const STORAGE_KEY = 'codesight_byok_llm_config_v1';
 const SIDECAR_URL = 'http://127.0.0.1:4317';
 
 const DEFAULT_CUSTOM_ERROR = `src/services/payment.ts(54,12): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'number'.
@@ -184,7 +184,7 @@ export function App() {
       </main>
 
       {/* The Actual Draggable, Collapsible Floating Screen HUD */}
-      <GlassBoxHUD
+      <CodeSightHUD
         bundle={bundle}
         theme={theme}
         onToggleTheme={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}

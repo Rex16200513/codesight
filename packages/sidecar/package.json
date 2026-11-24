@@ -1,5 +1,5 @@
 {
-  "name": "@glassbox/sidecar",
+  "name": "@codesight/sidecar",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@glassbox/core": "*"
+    "@codesight/core": "*"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

@@ -1,5 +1,5 @@
 /**
- * GlassBox Canonical Schema v1
+ * CodeSight Canonical Schema v1
  *
  * Designed as a host-agnostic, zero-dependency protocol contract.
  * Any renderer (Browser HUD, Codex/Orca Webview, VS Code Extension, MCP App ui://)

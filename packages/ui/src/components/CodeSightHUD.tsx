@@ -5,14 +5,14 @@ import {
   type DiagnosticBundle,
   type DiagnosticCard,
   type LLMConfig,
-} from '@glassbox/core';
+} from '@codesight/core';
 import { MentalModelCard } from './MentalModelCard.tsx';
 import { RippleCard } from './RippleCard.tsx';
 import { SilentRegressionCard } from './SilentRegressionCard.tsx';
 
 export type HUDTheme = 'light' | 'dark';
 
-export interface GlassBoxHUDProps {
+export interface CodeSightHUDProps {
   bundle: DiagnosticBundle;
   theme?: HUDTheme;
   onToggleTheme?: () => void;
@@ -53,7 +53,7 @@ function getCardTabMeta(card: DiagnosticCard, idx: number) {
   return { label: '链路地图', tone: 'calm' as const };
 }
 
-export function GlassBoxHUD({
+export function CodeSightHUD({
   bundle,
   theme = 'light',
   onToggleTheme,
@@ -68,7 +68,7 @@ export function GlassBoxHUD({
   onChangeLLMConfig,
   onHighlightFile,
   onDispatchPrompt,
-}: GlassBoxHUDProps) {
+}: CodeSightHUDProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [activeView, setActiveView] = useState<ActiveView>('cards');
   const [activeCardIdx, setActiveCardIdx] = useState(0);
@@ -156,10 +156,10 @@ export function GlassBoxHUD({
           type="button"
           className="gb-floating-pill"
           onClick={() => setCollapsed(false)}
-          title="展开 GlassBox 悬浮诊断 HUD"
+          title="展开 CodeSight 悬浮诊断 HUD"
         >
           <span className="gb-pill-dot" />
-          <span>GlassBox</span>
+          <span>CodeSight</span>
           <span className="gb-pill-count">
             {issueCount > 0 ? `${issueCount} 项待确认` : '运行正常'} · 展开
           </span>
@@ -173,7 +173,7 @@ export function GlassBoxHUD({
       <aside
         className={`gb-floating-window ${isDragging ? 'is-dragging' : ''}`}
         style={{ right: `${pos.right}px`, top: `${pos.top}px` }}
-        aria-label="GlassBox Floating HUD"
+        aria-label="CodeSight Floating HUD"
       >
         {/* Minimal Draggable Header */}
         <header
@@ -184,7 +184,7 @@ export function GlassBoxHUD({
         >
           <div className="gb-hud-identity">
             <span className="gb-hud-mark">G</span>
-            <span className="gb-hud-name">GlassBox</span>
+            <span className="gb-hud-name">CodeSight</span>
             <span className="gb-hud-agent-tag">{bundle.sourceAgent}</span>
           </div>
 

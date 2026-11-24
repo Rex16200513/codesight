@@ -1,16 +1,16 @@
 {
-  "name": "@glassbox/cli",
+  "name": "@codesight/cli",
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "glassbox": "./src/cli.ts"
+    "codesight": "./src/cli.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@glassbox/core": "*"
+    "@codesight/core": "*"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

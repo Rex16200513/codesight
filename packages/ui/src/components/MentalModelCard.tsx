@@ -1,4 +1,4 @@
-import type { MentalModelCardData } from '@glassbox/core';
+import type { MentalModelCardData } from '@codesight/core';
 
 interface MentalModelCardProps {
   card: MentalModelCardData;

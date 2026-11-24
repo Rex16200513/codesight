@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ActionOption, RippleCardData } from '@glassbox/core';
+import type { ActionOption, RippleCardData } from '@codesight/core';
 
 interface RippleCardProps {
   card: RippleCardData;

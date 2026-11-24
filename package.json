@@ -14,12 +14,12 @@
     "mcp:http": "npm run start:http --workspace=@codesight/mcp-server",
     "hud:build": "bash apps/macos-hud/build.sh",
     "hud:open": "bash apps/macos-hud/build.sh && open apps/macos-hud/dist/CodeSight.app",
-    "dev": "npm run dev --workspace=@glassbox/hud",
-    "dev:sidecar": "npm run dev --workspace=@glassbox/sidecar",
+    "dev": "npm run dev --workspace=@codesight/hud",
+    "dev:sidecar": "npm run dev --workspace=@codesight/sidecar",
     "dev:all": "node scripts/dev-all.mjs",
-    "build": "npm run build --workspace=@glassbox/core && npm run build --workspace=@codesight/mcp-server && npm run build --workspace=@glassbox/cli && npm run build --workspace=@glassbox/sidecar && npm run build --workspace=@glassbox/hud",
-    "typecheck": "npm run typecheck --workspace=@glassbox/core && npm run typecheck --workspace=@codesight/mcp-server && npm run typecheck --workspace=@glassbox/cli && npm run typecheck --workspace=@glassbox/ui && npm run typecheck --workspace=@glassbox/sidecar && npm run typecheck --workspace=@glassbox/hud",
-    "test": "npm run test --workspace=@glassbox/core && npm run test --workspace=@codesight/mcp-server"
+    "build": "npm run build --workspace=@codesight/core && npm run build --workspace=@codesight/mcp-server && npm run build --workspace=@codesight/cli && npm run build --workspace=@codesight/sidecar && npm run build --workspace=@codesight/hud",
+    "typecheck": "npm run typecheck --workspace=@codesight/core && npm run typecheck --workspace=@codesight/mcp-server && npm run typecheck --workspace=@codesight/cli && npm run typecheck --workspace=@codesight/ui && npm run typecheck --workspace=@codesight/sidecar && npm run typecheck --workspace=@codesight/hud",
+    "test": "npm run test --workspace=@codesight/core && npm run test --workspace=@codesight/mcp-server"
   },
   "engines": {
     "node": ">=20.0.0"

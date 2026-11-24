@@ -18,7 +18,7 @@ interface JsonRpcResponse {
 
 /**
  * Lightweight Zero-Dependency MCP JSON-RPC 2.0 over stdio client.
- * Connects GlassBox directly to external open-source Graph-RAG MCP servers:
+ * Connects CodeSight directly to external open-source Graph-RAG MCP servers:
  * - vitali87/code-graph-rag (MIT)
  * - CodeGraphContext / `cgc mcp start` (MIT, embedded KuzuDB / FalkorDBLite)
  * - sdsrss/code-graph-mcp / Serena LSP MCP
@@ -96,7 +96,7 @@ export async function callMcpStdioTool(
         await sendRequest('initialize', {
           protocolVersion: '2024-11-05',
           capabilities: {},
-          clientInfo: { name: 'glassbox-graphrag-bridge', version: '0.2.0' },
+          clientInfo: { name: 'codesight-graphrag-bridge', version: '0.8.3' },
         });
         child.stdin.write(
           JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n'

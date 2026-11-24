@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ActionOption, SilentRegressionCardData } from '@glassbox/core';
+import type { ActionOption, SilentRegressionCardData } from '@codesight/core';
 
 interface SilentRegressionCardProps {
   card: SilentRegressionCardData;

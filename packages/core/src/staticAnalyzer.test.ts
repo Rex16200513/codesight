@@ -49,6 +49,6 @@ test('analyzeDiagnostic synthesizes cards and surgical fix prompt without API ke
     { [firstRipple.id]: firstRipple.actions[0] },
     ['no-type-escape']
   );
-  assert.match(prompt, /GlassBox Surgical Fix Request/);
+  assert.match(prompt, /CodeSight Surgical Fix Request/);
   assert.match(prompt, /Do NOT use `as any`/);
 });

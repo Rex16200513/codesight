@@ -8,7 +8,7 @@ import {
   safeGitDiff,
   traceSymbol,
   type McpGraphProviderConfig,
-} from '@glassbox/core/engine';
+} from '@codesight/core/engine';
 import { installCodeSightPlugin, type AgentTarget } from './installer.ts';
 
 const C = {

@@ -9,7 +9,7 @@ export * from './promptBuilder.ts';
 export * from './scenarios.ts';
 
 /**
- * Main host-agnostic GlassBox analysis pipeline:
+ * Main host-agnostic CodeSight analysis pipeline:
  * Step 1: 0-Token Static Analysis (noise stripping, type diff, silent regression heuristics, context pruning)
  * Step 2: Deterministic Card Synthesis (instant baseline)
  * Step 3: Optional BYOK Lightweight LLM enrichment (consumes only the tiny pruned slice)

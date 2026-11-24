@@ -5,7 +5,7 @@ import {
   type AnalyzeInput,
   type DiagnosticBundle,
   type LLMConfig,
-} from '@glassbox/core';
+} from '@codesight/core';
 import {
   askRepository,
   buildVisualProjectMap,
@@ -14,7 +14,7 @@ import {
   resolveProjectArchitecture,
   safeGitDiff,
   traceSymbol,
-} from '@glassbox/core/engine';
+} from '@codesight/core/engine';
 import { toMCPAppResource } from './mcpBridge.ts';
 
 export interface SidecarOptions {

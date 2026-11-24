@@ -52,7 +52,7 @@ test('Stdio MCP Server handles initialize, tools/list, tools/call (trace & diagn
       arguments: { symbol: 'buildSurgicalFixPrompt', repoDir: REPO_ROOT },
     });
     const traceContent = (traceRes.result as { content: Array<{ type: string; text?: string }> }).content;
-    assert.match(traceContent[0].text ?? '', /GlassBoxHUD/);
+    assert.match(traceContent[0].text ?? '', /CodeSightHUD/);
 
     const diagRes = await rpc('tools/call', {
       name: 'codesight_diagnose',
