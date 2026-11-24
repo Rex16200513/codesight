@@ -426,6 +426,50 @@ const APPLE_CSS = `
     background: var(--cs-red);
     flex-shrink: 0;
   }
+  .cs-row-right {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+  }
+  .cs-dot-warn {
+    width: 5.5px;
+    height: 5.5px;
+    border-radius: 50%;
+    background: var(--cs-amber);
+    flex-shrink: 0;
+  }
+  .cs-tip-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 11px;
+    border-radius: 10px;
+    background: var(--cs-amber-soft);
+    border: 1px solid rgba(194, 109, 10, 0.18);
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: var(--cs-ink);
+  }
+  .cs-tip-strip.is-info {
+    background: var(--cs-canvas);
+    border-color: var(--cs-hairline);
+    color: var(--cs-muted);
+  }
+  .cs-tip-btn {
+    appearance: none;
+    border: 1px solid var(--cs-hairline-strong);
+    background: var(--cs-card);
+    color: var(--cs-ink);
+    border-radius: 7px;
+    padding: 4px 9px;
+    font-size: 11px;
+    font-weight: 550;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .cs-tip-btn:hover { border-color: var(--cs-amber); color: var(--cs-amber); }
 
   .cs-more {
     appearance: none;
@@ -929,6 +973,8 @@ export function renderVisualProjectMapHtml(
         faultBtn: '查看修复',
         faultState: '报错位置',
         filesCount: (n) => n + ' 个文件',
+        linesCount: (n) => n + ' 行',
+        splitBtn: '拆分建议',
         callers: (n) => n === 0 ? '独立文件' : n + ' 处调用',
         editBtn: (hub) => hub ? '安全调整' : '调整此文件',
         explainBtn: '讲解代码',
@@ -965,6 +1011,8 @@ export function renderVisualProjectMapHtml(
         faultBtn: 'Inspect fix',
         faultState: 'Error origin',
         filesCount: (n) => n + ' files',
+        linesCount: (n) => n + 'L',
+        splitBtn: 'Split prompt',
         callers: (n) => n === 0 ? 'Standalone' : n + ' callers',
         editBtn: (hub) => hub ? 'Safe edit' : 'Edit file',
         explainBtn: 'Explain',
@@ -1542,13 +1590,18 @@ export function renderVisualProjectMapHtml(
             const n = nodeMap.get(id);
             if (!n) return '';
             const isFault = DATA.activeDiagnosis?.targetNodeId === id;
-            const rightEl = isFault
-              ? '<span class="cs-dot-fault" aria-label="error"></span>'
-              : n.downstreamReach >= 5
-              ? '<span class="cs-row-metric">' + n.downstreamReach + '</span>'
-              : '';
+            const hasWarnTip = Array.isArray(n.healthTips) && n.healthTips.some(tp => tp.level === 'warn');
+            let rightEl = '';
+            if (isFault) {
+              rightEl = '<span class="cs-dot-fault" aria-label="error"></span>';
+            } else if (n.downstreamReach >= 5 || hasWarnTip) {
+              rightEl = '<span class="cs-row-right">' +
+                (hasWarnTip ? '<span class="cs-dot-warn" title="' + escHtml(isEn() ? n.healthTips[0].en : n.healthTips[0].zh) + '"></span>' : '') +
+                (n.downstreamReach >= 5 ? '<span class="cs-row-metric">' + n.downstreamReach + '</span>' : '') +
+              '</span>';
+            }
 
-            return '<button type="button" class="cs-row' + (isFault ? ' is-fault' : '') + '" data-node-id="' + escHtml(n.id) + '" title="' + escHtml(n.path) + '">' +
+            return '<button type="button" class="cs-row' + (isFault ? ' is-fault' : '') + '" data-node-id="' + escHtml(n.id) + '" title="' + escHtml(n.path + (n.lines ? ' (' + n.lines + 'L)' : '')) + '">' +
               '<span class="cs-row-name">' + escHtml(shortName(n)) + '</span>' +
               rightEl +
             '</button>';
@@ -1679,6 +1732,14 @@ export function renderVisualProjectMapHtml(
           '</div>';
       }
 
+      const primaryTip = Array.isArray(node.healthTips) && node.healthTips.length > 0 ? node.healthTips[0] : null;
+      const tipHtml = primaryTip
+        ? '<div class="cs-tip-strip' + (primaryTip.level === 'info' ? ' is-info' : '') + '">' +
+            '<span>' + escHtml(isEn() ? primaryTip.en : primaryTip.zh) + '</span>' +
+            '<button type="button" class="cs-tip-btn" id="cs-act-split">' + t.splitBtn + '</button>' +
+          '</div>'
+        : '';
+
       const crumbZone = tr().zones[node.zoneKind] || (isEn() ? node.zoneKind : node.zoneTitle);
       sheetEl.innerHTML =
         '<div class="cs-sheet-head">' +
@@ -1695,10 +1756,12 @@ export function renderVisualProjectMapHtml(
               '<div class="cs-meta-top">' +
                 '<h3 class="cs-meta-title">' + escHtml(shortName(node)) + '</h3>' +
                 '<span class="cs-state-dot" style="color:' + stateColor + '">' + escHtml(stateLabel) + '</span>' +
+                (node.lines ? '<span style="font-size:11px;color:var(--cs-faint);font-variant-numeric:tabular-nums">' + escHtml(t.linesCount(node.lines)) + '</span>' : '') +
               '</div>' +
               '<p class="cs-meta-desc">' + escHtml(isFault ? (faultHeadline() || nodeSummary(node)) : nodeSummary(node)) + '</p>' +
             '</div>' +
           '</div>' +
+          tipHtml +
           '<div class="cs-links">' +
             '<div class="cs-link-row"><span class="cs-link-lbl">' + t.uses + '</span>' + upChips + '</div>' +
             '<div class="cs-link-row"><span class="cs-link-lbl">' + t.usedBy + '</span>' + downChips + '</div>' +
@@ -1735,6 +1798,10 @@ export function renderVisualProjectMapHtml(
           }
         });
       };
+
+      if (primaryTip) {
+        wireCopy(document.getElementById('cs-act-split'), primaryTip.refactorPrompt);
+      }
 
       if (isFault && DATA.activeDiagnosis.directions.length > 0) {
         const fixBtn = document.getElementById('cs-act-fix');

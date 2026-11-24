@@ -21,10 +21,20 @@ export type PrototypeVisualKind =
   | 'data-schema'
   | 'logic-pipeline';
 
+export interface FileHealthTip {
+  kind: 'oversized' | 'god-module' | 'high-coupling' | 'large-hub';
+  level: 'warn' | 'info';
+  zh: string;
+  en: string;
+  refactorPrompt: string;
+}
+
 export interface VisualMapNode {
   id: string;
   name: string;
   path: string;
+  lines: number;
+  symbolCount: number;
   laneId: string;
   laneTitle: string;
   zoneId: string;
@@ -46,6 +56,7 @@ export interface VisualMapNode {
   directDownstreamPaths: string[];
   allDownstreamPaths: string[];
   callers: Array<{ symbol: string; callerName: string; callerFile: string; callerLine: number }>;
+  healthTips: FileHealthTip[];
   status: 'normal' | 'fault' | 'direct-impact' | 'indirect-impact' | 'upstream';
 }
 
@@ -83,6 +94,11 @@ export interface VisualProjectMapPayload {
   lanes: VisualMapLane[];
   nodes: VisualMapNode[];
   edges: VisualMapEdge[];
+  healthSummary: {
+    warnFilesCount: number;
+    tipFilesCount: number;
+    largestFile?: { path: string; name: string; lines: number };
+  };
   activeDiagnosis?: {
     targetNodeId?: string;
     targetLine?: number;
@@ -134,6 +150,65 @@ function inferPrototypeKind(file: IndexedFileNode, zoneKind: ZoneKind): Prototyp
     return 'api-server';
   }
   return 'logic-pipeline';
+}
+
+function computeHealthTips(
+  file: IndexedFileNode,
+  outDegree: number,
+  downstreamReach: number,
+  isUi: boolean
+): FileHealthTip[] {
+  const tips: FileHealthTip[] = [];
+  const lines = file.lines;
+  const symCount = file.symbols?.length ?? 0;
+
+  if (downstreamReach >= 5 && lines >= 400) {
+    tips.push({
+      kind: 'large-hub',
+      level: 'warn',
+      zh: `核心共享文件体量较大（${lines} 行 · ${downstreamReach} 处用），建议拆出纯接口/类型与内部实现`,
+      en: `Large high-impact hub (${lines} lines · ${downstreamReach} callers) — separate public contract from internals`,
+      refactorPrompt: `[CodeSight Safe Split] Split \`${file.path}\` (${lines} lines, used by ${downstreamReach} files) into smaller focused modules while re-exporting all existing public symbols from \`${file.path}\` so zero callers break.`,
+    });
+  } else if (lines >= 600) {
+    tips.push({
+      kind: 'oversized',
+      level: 'warn',
+      zh: `${isUi ? 'UI 组件' : '文件'}代码过长（${lines} 行），建议按职责拆分为多个小模块`,
+      en: `${isUi ? 'UI component' : 'Module'} is large (${lines} lines) — split into smaller focused files`,
+      refactorPrompt: `[CodeSight Refactor] Refactor \`${file.path}\` (${lines} lines) into 2-3 cohesive sub-modules (keep existing exports intact and verify build/tests pass).`,
+    });
+  } else if (isUi && lines >= 350) {
+    tips.push({
+      kind: 'oversized',
+      level: 'info',
+      zh: `UI 文件偏长（${lines} 行），可抽离独立子组件、模板或交互逻辑`,
+      en: `Long UI file (${lines} lines) — consider extracting sub-views or helpers`,
+      refactorPrompt: `[CodeSight UI Split] Extract reusable sub-views or DOM/state helpers out of \`${file.path}\` (${lines} lines) while preserving exact behavior and exports.`,
+    });
+  }
+
+  if (symCount >= 18 && lines >= 300 && tips.length < 2) {
+    tips.push({
+      kind: 'god-module',
+      level: lines >= 500 ? 'warn' : 'info',
+      zh: `单文件包含 ${symCount} 个函数/定义，职责较集中，建议抽离独立工具模块`,
+      en: `Contains ${symCount} symbols — extract cohesive helper modules to reduce cognitive load`,
+      refactorPrompt: `[CodeSight Modularize] \`${file.path}\` defines ${symCount} symbols across ${lines} lines. Group related helpers into dedicated module(s) and keep public exports backward-compatible.`,
+    });
+  }
+
+  if (outDegree >= 8 && tips.length < 2) {
+    tips.push({
+      kind: 'high-coupling',
+      level: 'info',
+      zh: `直接依赖 ${outDegree} 个内部文件，耦合度较高，上游变动容易波及此处`,
+      en: `Directly imports ${outDegree} internal files — high coupling to upstream modules`,
+      refactorPrompt: `[CodeSight Decouple] Review the ${outDegree} internal imports in \`${file.path}\` and introduce a slim facade or narrow interfaces to reduce coupling.`,
+    });
+  }
+
+  return tips.slice(0, 2);
 }
 
 function collectTransitiveDownstream(
@@ -250,10 +325,21 @@ export function buildVisualProjectMap(
     else if (indirectSet.has(file.path)) status = 'indirect-impact';
     else if (upstreamSet.has(file.path)) status = 'upstream';
 
+    const protoKind = arch.prototypes?.[file.path]?.kind ?? inferPrototypeKind(file, placement.zoneKind);
+    const isUiProto = protoKind.startsWith('ui-');
+    const healthTips = computeHealthTips(
+      file,
+      metrics?.outDegree ?? 0,
+      metrics?.totalDownstreamReach ?? 0,
+      isUiProto
+    );
+
     return {
       id: file.path,
       name: file.name,
       path: file.path,
+      lines: file.lines,
+      symbolCount: file.symbols?.length ?? 0,
       laneId: placement.laneId,
       laneTitle: placement.laneTitle,
       zoneId: placement.zoneId,
@@ -261,7 +347,7 @@ export function buildVisualProjectMap(
       zoneKind: placement.zoneKind,
       roleLabel: file.roleLabel,
       summary: file.summary,
-      prototypeKind: arch.prototypes?.[file.path]?.kind ?? inferPrototypeKind(file, placement.zoneKind),
+      prototypeKind: protoKind,
       prototypeSpec: arch.prototypes?.[file.path],
       childComponents: Array.from(childCompSet).slice(0, 4),
       inDegree: metrics?.inDegree ?? 0,
@@ -275,6 +361,7 @@ export function buildVisualProjectMap(
         selectedSet.has(p)
       ),
       callers: fileCallers.slice(0, 5),
+      healthTips,
       status,
     };
   });
@@ -375,6 +462,10 @@ export function buildVisualProjectMap(
     };
   }
 
+  const warnFilesCount = visualNodes.filter((n) => n.healthTips.some((t) => t.level === 'warn')).length;
+  const tipFilesCount = visualNodes.filter((n) => n.healthTips.length > 0).length;
+  const largest = [...visualNodes].sort((a, b) => b.lines - a.lines)[0];
+
   return {
     repoName: index.repoName,
     archetype: arch.archetype,
@@ -389,6 +480,11 @@ export function buildVisualProjectMap(
     lanes: zones.flatMap((z) => z.lanes),
     nodes: visualNodes,
     edges,
+    healthSummary: {
+      warnFilesCount,
+      tipFilesCount,
+      ...(largest ? { largestFile: { path: largest.path, name: largest.name, lines: largest.lines } } : {}),
+    },
     activeDiagnosis,
   };
 }

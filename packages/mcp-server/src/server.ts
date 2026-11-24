@@ -301,6 +301,7 @@ export class CodeSightMcpHandler {
       const html = renderVisualProjectMapHtml(visualMap, cfg);
       this.uiResources.set(uri, { title: `CodeSight Map (${map.repoName})`, html });
 
+      const warnNodes = visualMap.nodes.filter((n) => n.healthTips.some((t) => t.level === 'warn'));
       const textSummary = [
         `CodeSight Map · ${map.repoName} [${blueprint.archetypeLabel} · ${blueprint.source}] (${map.totalFiles} files, ${map.totalSymbols} AST symbols, ${map.scanMs}ms)`,
         `Architecture: ${blueprint.projectHeadline}`,
@@ -310,6 +311,12 @@ export class CodeSightMcpHandler {
         ),
         'Most-used Foundation Files:',
         ...map.hubs.slice(0, 5).map((h) => `- ${h.path} [used by ${h.downstreamReach} files] — ${h.roleLabel}`),
+        ...(warnNodes.length > 0
+          ? [
+              'Refactor Tips (Oversized / High-Complexity Files):',
+              ...warnNodes.slice(0, 4).map((n) => `- ${n.path} (${n.lines} lines): ${n.healthTips[0].en}`),
+            ]
+          : []),
       ].join('\n');
 
       return {
