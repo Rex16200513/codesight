@@ -166,10 +166,16 @@ export function startSidecarServer(options: SidecarOptions = {}) {
           repoDir?: string;
           rawError?: string;
           useGit?: boolean;
+          forceRefresh?: boolean;
         };
         const dir = body.repoDir || process.cwd();
+        const cfg = loadCodeSightConfig(dir);
         const { index, graph, callGraph } = await generateRepoMap(dir);
-        const blueprint = await resolveProjectArchitecture(index, graph);
+        const llmConfig = cfg.architectureMode === 'heuristic' ? undefined : toActiveLLMConfig(cfg);
+        const blueprint = await resolveProjectArchitecture(index, graph, {
+          llmConfig,
+          forceRefresh: Boolean(body.forceRefresh),
+        });
         let diagReport;
         if (body.rawError || body.useGit) {
           const rawDiff = body.useGit ? safeGitDiff(dir).diff : '';
@@ -178,6 +184,54 @@ export function startSidecarServer(options: SidecarOptions = {}) {
         sendJson(res, 200, buildVisualProjectMap(index, graph, callGraph, diagReport, blueprint));
       } catch (err) {
         sendJson(res, 400, { error: err instanceof Error ? err.message : 'visual-map failed' });
+      }
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/refresh-prototypes') {
+      try {
+        const body = JSON.parse((await readBody(req)) || '{}') as { repoDir?: string };
+        const dir = body.repoDir || process.cwd();
+        const cfg = loadCodeSightConfig(dir);
+        const llmConfig = toActiveLLMConfig(cfg);
+        if (!llmConfig) {
+          sendJson(res, 200, {
+            ok: false,
+            needsLlmConfig: true,
+            error:
+              cfg.language === 'en'
+                ? 'Enable a BYOK model in Settings first to generate or refresh UI prototypes.'
+                : '请先在设置中启用小模型（BYOK），即可一键生成或刷新所有 UI 原型示意图。',
+          });
+          return;
+        }
+        const { index, graph, callGraph } = await generateRepoMap(dir);
+        const blueprint = await resolveProjectArchitecture(index, graph, {
+          llmConfig,
+          forceRefresh: true,
+        });
+        const visualMap = buildVisualProjectMap(index, graph, callGraph, undefined, blueprint);
+        const prototypeCount = Object.keys(blueprint.prototypes ?? {}).length;
+        sendJson(res, 200, {
+          ok: blueprint.source === 'llm-cached',
+          source: blueprint.source,
+          modelName: blueprint.modelName ?? llmConfig.model,
+          prototypeCount,
+          visualMap,
+          ...(blueprint.source !== 'llm-cached'
+            ? {
+                error:
+                  cfg.language === 'en'
+                    ? 'Model did not return a valid prototype spec. Check Base URL, model name, and API key.'
+                    : '模型未返回有效的 UI 原型结构，请检查 Base URL、模型名与 API Key 是否正常。',
+              }
+            : {}),
+        });
+      } catch (err) {
+        sendJson(res, 400, {
+          ok: false,
+          error: err instanceof Error ? err.message : 'refresh-prototypes failed',
+        });
       }
       return;
     }

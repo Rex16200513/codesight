@@ -56,6 +56,8 @@ final class HUDViewModel: ObservableObject {
     // Map state
     @Published var repoMap: RepoMapDTO?
     @Published var expandedLayers: Set<String> = ["core-logic"]
+    @Published var isRefreshingPrototypes: Bool = false
+    @Published var prototypeStatusMessage: String?
 
     // Ask & Trace state
     @Published var askQuery: String = ""
@@ -153,6 +155,39 @@ final class HUDViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    func refreshUIPrototypesWithLLM() async {
+        guard !isRefreshingPrototypes else { return }
+        isRefreshingPrototypes = true
+        errorMessage = nil
+        prototypeStatusMessage = nil
+        sidecarOnline = await bridge.checkSidecarHealth()
+        do {
+            guard let res = try await bridge.refreshPrototypes(repoDir: repoDir) else {
+                errorMessage = isEnglish
+                    ? "Start local Sidecar (`codesight serve`) first to refresh UI prototypes."
+                    : "请先启动本地 Sidecar（codesight serve），即可一键用 LLM 刷新 UI 原型。"
+                isRefreshingPrototypes = false
+                return
+            }
+            if res.needsLlmConfig == true {
+                showSettings = true
+                errorMessage = res.error ?? (isEnglish ? "Enable BYOK LLM in Settings first." : "请先在设置中启用小模型（BYOK）。")
+            } else if res.ok {
+                let count = res.prototypeCount ?? 0
+                let model = res.modelName ?? config.llm.model
+                prototypeStatusMessage = isEnglish
+                    ? "Refreshed \(count) UI wireframes via \(model)"
+                    : "已用 \(model) 生成 / 刷新 \(count) 个 UI 原型示意图"
+                await loadMap()
+            } else {
+                errorMessage = res.error ?? (isEnglish ? "Failed to refresh UI prototypes." : "UI 原型刷新失败，请检查模型配置。")
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isRefreshingPrototypes = false
     }
 
     func submitAsk(_ overrideQuery: String? = nil) async {

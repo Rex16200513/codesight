@@ -2,6 +2,18 @@
 
 All notable changes to **CodeSight** are documented in this file.
 
+## [1.0.2] - 2026-11-24
+
+### Added
+- **On-Demand LLM UI Prototype Generator & Refresh Button**: Added an `AI 原型` / `AI UI` button in the visual board header, a per-component `LLM 刷新原型` / `Refresh UI with LLM` button inside every UI modal, a `sparkles` refresh action in the native macOS HUD (header, Map tab, and BYOK Settings), `forceRefresh` support on `resolveProjectArchitecture()` / `codesight_map`, and a `POST /api/refresh-prototypes` Sidecar API endpoint. In local Sidecar mode it refreshes UI wireframes in-place via BYOK LLM; inside AI Agent chat iframes it copies/dispatches a ready-to-send Host-Agent prompt with zero extra API key.
+- **Typed Mini-Figma Wireframe DSL & Non-UI Relation Mini-Graphs**: UI components render typed vector wireframe blocks (`header`, `tabs`, `toggle`, `slider`, `chips`, `list`, `search`, `highlight`, `actions`), while non-UI backend/core/schema modules render real local AST dependency mini-graphs.
+- **0-Token Code Health & Refactor Tips + Footer Legend**: Flags oversized/high-impact files with subtle amber indicators, a footer legend (`● 建议拆分` / `● Large`), and a 1-click safe split prompt inside the detail sheet.
+- **Reliable 3-Tier Clipboard Copy**: Works seamlessly across sandboxed chat iframes, `file://`, and local HTTP with an automatic selectable prompt box fallback.
+
+### Refactored & Fixed
+- **Clean Modular Split**: Split `packages/mcp-server/src/uiCards.ts` (2,144 → 202 lines) into `uiStyles.ts`, `uiSheetStyles.ts`, `uiSvgClient.ts`, `uiBoardClient.ts`, `uiSheetsClient.ts`, and `uiCards.ts`. Split `apps/macos-hud/Sources/HUDViews.swift` (1,174 lines) into `HUDChromeViews.swift`, `HUDSettingsView.swift`, `HUDMapTabView.swift`, and `HUDAskAndDiagnoseViews.swift`.
+- **Indexer Self-Match Fix**: Tightened DOM UI detection in `packages/core/src/repoIndexer.ts` so code analyzers/indexers containing DOM regex patterns are classified accurately as `代码分析核心` instead of `界面组件`.
+
 ## [1.0.1] - 2026-11-24
 
 ### Added

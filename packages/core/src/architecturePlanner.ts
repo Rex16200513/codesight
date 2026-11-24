@@ -585,6 +585,7 @@ export async function resolveProjectArchitecture(
     override?: HostArchitectureOverride;
     llmConfig?: LLMConfig;
     persistCache?: boolean;
+    forceRefresh?: boolean;
   }
 ): Promise<ArchitectureBlueprint> {
   const persistCache = options?.persistCache ?? true;
@@ -609,8 +610,8 @@ export async function resolveProjectArchitecture(
     return bp;
   }
 
-  // 2. Check cached LLM / Host-Agent architecture blueprint
-  if (fs.existsSync(cachePath)) {
+  // 2. Check cached LLM / Host-Agent architecture blueprint (skip when forceRefresh is requested)
+  if (!options?.forceRefresh && fs.existsSync(cachePath)) {
     try {
       const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8')) as ArchitectureBlueprint;
       if (cached.schemaVersion === '1.0' && cached.structureHash === currentHash && cached.zones?.length > 0) {

@@ -56,7 +56,12 @@ const TOOL_DEFINITIONS = [
         architectureOverride: {
           type: 'object',
           description:
-            'Optional semantic architecture blueprint provided by the host AI agent (e.g., custom Frontend / Backend / Shared zones tailored to this specific project). Cached locally once provided.',
+            'Optional semantic architecture blueprint provided by the host AI agent (e.g., custom Frontend / Backend / Shared zones and per-UI-component wireframe prototypes). Cached locally once provided.',
+        },
+        forceRefresh: {
+          type: 'boolean',
+          description:
+            'When true, bypasses the cached .codesight/architecture.json and regenerates zones + UI wireframe prototypes using the configured BYOK LLM.',
         },
       },
     },
@@ -294,8 +299,13 @@ export class CodeSightMcpHandler {
       const cfg = loadCodeSightConfig(repoDir);
       const { map, index, graph, callGraph } = await generateRepoMap(repoDir);
       const override = args.architectureOverride as HostArchitectureOverride | undefined;
+      const forceRefresh = Boolean(args.forceRefresh);
       const llmConfig = cfg.architectureMode === 'heuristic' ? undefined : toActiveLLMConfig(cfg);
-      const blueprint = await resolveProjectArchitecture(index, graph, { override, llmConfig });
+      const blueprint = await resolveProjectArchitecture(index, graph, {
+        override,
+        llmConfig,
+        forceRefresh,
+      });
       const visualMap = buildVisualProjectMap(index, graph, callGraph, undefined, blueprint);
       const uri = 'ui://codesight/map/latest';
       const html = renderVisualProjectMapHtml(visualMap, cfg);

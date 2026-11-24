@@ -347,8 +347,14 @@ function inferLayerAndRole(
   }
 
   const hasDomUi =
-    Boolean(content && /\b(document\.createElement|innerHTML|attachShadow|insertAdjacentHTML|querySelector)\b/.test(content)) &&
-    !/(^|\/)core\/(utils|services|types)\//.test(lower);
+    Boolean(
+      content &&
+        /(document\.createElement\s*\(|\.innerHTML\s*=|\.attachShadow\s*\(|\.insertAdjacentHTML\s*\(|document\.querySelector(?:All)?\s*\()/.test(
+          content
+        )
+    ) &&
+    !/(^|\/)core\/(utils|services|types)\//.test(lower) &&
+    !/(indexer|parser|analyzer|graph|embedding)\.[tj]s$/i.test(base);
   const hasUiFileName = /(modal|dialog|drawer|sidebar|board|panel|hud|toolbar|launcher|customizer|highlighter|toolhub|popover|toast)/i.test(base);
 
   if (lower.endsWith('.tsx') || lower.endsWith('.jsx') || lower.includes('/components/') || hasUiFileName || hasDomUi) {

@@ -34,7 +34,10 @@ swiftc \
   "$SCRIPT_DIR/Sources/Models.swift" \
   "$SCRIPT_DIR/Sources/EngineBridge.swift" \
   "$SCRIPT_DIR/Sources/HUDViewModel.swift" \
-  "$SCRIPT_DIR/Sources/HUDViews.swift" \
+  "$SCRIPT_DIR/Sources/HUDChromeViews.swift" \
+  "$SCRIPT_DIR/Sources/HUDSettingsView.swift" \
+  "$SCRIPT_DIR/Sources/HUDMapTabView.swift" \
+  "$SCRIPT_DIR/Sources/HUDAskAndDiagnoseViews.swift" \
   "$SCRIPT_DIR/Sources/HUDPanelController.swift" \
   "$SCRIPT_DIR/Sources/main.swift"
 
@@ -52,9 +55,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundleVersion</key>
-  <string>1.0.0</string>
+  <string>1.0.2</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0.0</string>
+  <string>1.0.2</string>
   <key>CFBundleExecutable</key>
   <string>CodeSight</string>
   <key>CFBundlePackageType</key>

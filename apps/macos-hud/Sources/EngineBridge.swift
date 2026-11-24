@@ -55,12 +55,13 @@ final class EngineBridge: Sendable {
     private func postSidecar<Req: Encodable, Res: Decodable>(
         path: String,
         body: Req,
-        as type: Res.Type
+        as type: Res.Type,
+        timeout: TimeInterval = 15
     ) async throws -> Res? {
         guard let url = URL(string: "\(sidecarBaseURL)\(path)") else { return nil }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
-        req.timeoutInterval = 15
+        req.timeoutInterval = timeout
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONEncoder().encode(body)
 
@@ -210,5 +211,15 @@ final class EngineBridge: Sendable {
             return res
         }
         return try await runCLI(arguments: ["diagnose", "--git", repoDir], as: DiagnoseReportDTO.self)
+    }
+
+    func refreshPrototypes(repoDir: String) async throws -> RefreshPrototypesResponseDTO? {
+        struct RefreshReq: Encodable { let repoDir: String }
+        return try await postSidecar(
+            path: "/api/refresh-prototypes",
+            body: RefreshReq(repoDir: repoDir),
+            as: RefreshPrototypesResponseDTO.self,
+            timeout: 45
+        )
     }
 }

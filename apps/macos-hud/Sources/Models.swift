@@ -232,3 +232,12 @@ struct TokenEconomyDTO: Codable, Sendable {
     let llmUsed: Bool?
     let llmModel: String?
 }
+
+struct RefreshPrototypesResponseDTO: Codable, Sendable {
+    let ok: Bool
+    let needsLlmConfig: Bool?
+    let source: String?
+    let modelName: String?
+    let prototypeCount: Int?
+    let error: String?
+}
