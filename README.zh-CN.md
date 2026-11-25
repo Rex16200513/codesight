@@ -131,6 +131,10 @@ CodeSight 不是把代码随便切块丢进向量库，而是在本地对代码�
 
 ## 全生态适配矩阵（覆盖 11 款主流 AI Agent + 原生 macOS HUD）
 
+<p align="center">
+  <img src="./assets/codesight-ecosystem.png" alt="CodeSight 全生态适配 — DeepSeek Harness、Antigravity、Claude Code、Claude Desktop、Cursor、Windsurf、VS Code、Cline、OpenCode、Codex CLI、ChatGPT Apps 与 macOS HUD" width="840" />
+</p>
+
 | 客户端 / 环境 | 插件接入方式 | 交互视图 | 一键安装命令 |
 | --- | --- | --- | --- |
 | **DeepSeek Harness (`dsh`)** | 原生 Cordis 插件包（`@codesight/dsh-plugin`）+ MCP Overlay | Web UI 原生插槽卡片 | `dsh plugin add ./packages/dsh-plugin` 或 `... install --target dsh` |
@@ -159,10 +163,12 @@ npm install && npm run build
 ### 1. 一键安装到你的 AI Agent
 
 ```bash
+node packages/cli/dist/cli.js install --target dsh           # DeepSeek Harness (或 dsh plugin add ./packages/dsh-plugin)
 node packages/cli/dist/cli.js install --target cursor
 node packages/cli/dist/cli.js install --target claude-code
 node packages/cli/dist/cli.js install --target antigravity
-# 预览全部安装目标：
+node packages/cli/dist/cli.js install --target windsurf
+# 预览全部 11 款主流 Agent 安装目标：
 node packages/cli/dist/cli.js install --target all --dry-run
 ```
 

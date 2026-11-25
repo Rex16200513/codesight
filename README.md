@@ -131,6 +131,10 @@ Built for long debugging threads: click the top bar or chevron to collapse any c
 
 ## Ecosystem Compatibility (11 Mainstream AI Agents + Native macOS HUD)
 
+<p align="center">
+  <img src="./assets/codesight-ecosystem.png" alt="CodeSight Ecosystem — DeepSeek Harness, Antigravity, Claude Code, Claude Desktop, Cursor, Windsurf, VS Code, Cline, OpenCode, Codex CLI, ChatGPT Apps, macOS HUD" width="840" />
+</p>
+
 | Client / Environment | Integration Mode | Interactive Board | Setup Command |
 | --- | --- | --- | --- |
 | **DeepSeek Harness (`dsh`)** | Native Cordis Bundle (`@codesight/dsh-plugin`) + MCP Overlay | Inline Web UI Slot (`tool.call.toolview`) | `dsh plugin add ./packages/dsh-plugin` or `... install --target deepseek-harness` |
@@ -162,11 +166,13 @@ npm install && npm run build
 
 ```bash
 # Install for a specific agent (add --global for user-wide config, --dry-run to preview)
+node packages/cli/dist/cli.js install --target deepseek-harness  # or: dsh plugin add ./packages/dsh-plugin
 node packages/cli/dist/cli.js install --target cursor
 node packages/cli/dist/cli.js install --target claude-code
 node packages/cli/dist/cli.js install --target antigravity
+node packages/cli/dist/cli.js install --target windsurf
 
-# Or configure all supported agents at once
+# Or preview / configure all 11 supported agents at once
 node packages/cli/dist/cli.js install --target all --dry-run
 ```
 
@@ -216,18 +222,21 @@ flowchart LR
   Repo["Local Repository (TS / JS / Python)"] --> Core["@codesight/core\nAST + Python Parser · Call Graph · RRF · Guard"]
   Config["~/.codesight/config.json"] --> Core
   Core --> MCP["@codesight/mcp-server\nStdio & Streamable HTTP /mcp + MCP App Cards"]
+  Core --> DSH["@codesight/dsh-plugin\nNative DeepSeek Harness Cordis + UI Slot"]
   Core --> Sidecar["@codesight/sidecar\nHTTP / SSE Bridge & Browser Board :4317"]
-  Core --> CLI["@codesight/cli\nInstaller & CLI"]
-  MCP --> Agents["AI Agents\nAntigravity · Cursor · Claude · Codex · ChatGPT"]
+  Core --> CLI["@codesight/cli\n11-Agent Installer & CLI"]
+  MCP --> Agents["AI Agents\nAntigravity · Claude · Cursor · Windsurf · VS Code · Cline · OpenCode · Codex · ChatGPT"]
+  DSH --> DSHApp["DeepSeek Harness (dsh)\nNative In-Process Tools & Web UI Cards"]
   Sidecar --> HUD["Native macOS HUD\nSwiftUI Always-on-Top Floating Panel"]
 ```
 
 ```text
-assets/            Brand identity (logo.svg, codesight-logo.png, promo video, screenshots)
+assets/            Brand identity (logo.svg, codesight-logo.png, ecosystem banner, demo GIF, screenshots)
 packages/
   core/            TS Compiler AST & Python parser, dependency/call graph, hybrid RRF, config store
   mcp-server/      Stdio + Streamable HTTP (/mcp) server & Apple-minimalist MCP App cards
-  cli/             CLI (map, ask, trace, diagnose, config, install)
+  dsh-plugin/      Native DeepSeek Harness (dsh) Cordis bundle + Web UI toolview slot + MCP overlay
+  cli/             Universal 11-agent installer & CLI (map, ask, trace, diagnose, config, install)
   sidecar/         Local HTTP/SSE engine bridge & browser visual board (port 4317)
   ui/              Shared React HUD components
 apps/
