@@ -1,0 +1,5 @@
+# Official DeepSeek Harness (dsh) bundle layer for CodeSight.
+# Install with: dsh plugin --profile default add ./packages/dsh-plugin
+- insert:
+    - id: codesight-plugin
+      name: '@codesight/dsh-plugin'

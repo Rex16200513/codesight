@@ -1,0 +1,58 @@
+{
+  "name": "@codesight/dsh-plugin",
+  "version": "1.0.4",
+  "description": "Native DeepSeek Harness (dsh) Cordis plugin for CodeSight — local-first GraphRAG architecture cards, AST call tracing, and 0-token silent regression guard.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    }
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "codesight.mcp.cordis.yml",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "codesight",
+    "graphrag",
+    "ast",
+    "mcp"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-tool"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --experimental-strip-types --test src/plugin.test.ts"
+  },
+  "dependencies": {
+    "@codesight/core": "*",
+    "@codesight/mcp-server": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.2"
+  }
+}

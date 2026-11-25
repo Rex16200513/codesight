@@ -1,0 +1,12 @@
+# Opt-in DeepSeek Harness MCP overlay for CodeSight (zero extra dependencies).
+# Usage: dsh web --patch ./packages/dsh-plugin/codesight.mcp.cordis.yml
+- insert:
+    - id: codesight-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: codesight
+        transport: stdio
+        command: node
+        args:
+          - ./packages/mcp-server/dist/index.js
+        cwd: !!js process.cwd()

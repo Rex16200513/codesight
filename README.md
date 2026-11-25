@@ -129,15 +129,19 @@ Built for long debugging threads: click the top bar or chevron to collapse any c
 
 ---
 
-## Ecosystem Compatibility
+## Ecosystem Compatibility (11 Mainstream AI Agents + Native macOS HUD)
 
-| Client / Environment | Transport | Interactive Board | Setup Command |
+| Client / Environment | Integration Mode | Interactive Board | Setup Command |
 | --- | --- | --- | --- |
+| **DeepSeek Harness (`dsh`)** | Native Cordis Bundle (`@codesight/dsh-plugin`) + MCP Overlay | Inline Web UI Slot (`tool.call.toolview`) | `dsh plugin add ./packages/dsh-plugin` or `... install --target deepseek-harness` |
 | **Antigravity** | Native Plugin + MCP Apps (`stdio`) | Inline Chat Cards | `node packages/cli/dist/cli.js install --target antigravity` |
-| **Cursor** | MCP (`stdio`) | Browser Board + Text | `node packages/cli/dist/cli.js install --target cursor` |
-| **Claude Code** | MCP (`stdio`) | Browser Board + Text | `node packages/cli/dist/cli.js install --target claude-code` |
+| **Claude Code** | MCP (`stdio`) | Inline / Browser Board | `node packages/cli/dist/cli.js install --target claude-code` |
 | **Claude Desktop** | MCP Apps (`stdio`) | Inline Chat Cards | `node packages/cli/dist/cli.js install --target claude-desktop` |
+| **Cursor** | MCP (`stdio`) | Browser Board + Text | `node packages/cli/dist/cli.js install --target cursor` |
+| **Windsurf** | MCP (`stdio`) | Browser Board + Text | `node packages/cli/dist/cli.js install --target windsurf` |
 | **VS Code / Copilot** | MCP (`stdio`) | Browser Board + macOS HUD | `node packages/cli/dist/cli.js install --target vscode` |
+| **Cline / Roo Code** | MCP (`stdio`) | Browser Board + Text | `node packages/cli/dist/cli.js install --target cline` |
+| **OpenCode** | Local MCP (`opencode.json`) | Browser Board + Text | `node packages/cli/dist/cli.js install --target opencode` |
 | **OpenAI Codex CLI** | MCP (`stdio`) | Browser Board + Text | `node packages/cli/dist/cli.js install --target codex` |
 | **ChatGPT Apps / Remote** | Streamable HTTP (`/mcp`) | Inline MCP Apps | `npm run mcp:http` |
 | **macOS Floating HUD** | Local Sidecar (`127.0.0.1:4317`) | Native SwiftUI Window | `npm run hud:open` |

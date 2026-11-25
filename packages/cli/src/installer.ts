@@ -4,10 +4,14 @@ import path from 'node:path';
 
 export type AgentTarget =
   | 'antigravity'
+  | 'deepseek-harness'
   | 'claude-code'
   | 'claude-desktop'
   | 'cursor'
+  | 'windsurf'
   | 'vscode'
+  | 'cline'
+  | 'opencode'
   | 'codex'
   | 'chatgpt'
   | 'all';
@@ -16,7 +20,7 @@ export interface InstallPlanItem {
   target: Exclude<AgentTarget, 'all'>;
   scope: 'workspace' | 'global' | 'instructions';
   destination: string;
-  action: 'write-json' | 'copy-plugin' | 'print-snippet';
+  action: 'write-json' | 'copy-plugin' | 'write-yaml' | 'print-snippet';
   summary: string;
   snippet?: string;
 }
@@ -43,7 +47,7 @@ function getMcpEntryCommand(engineRoot: string): { command: string; args: string
 
 function mergeMcpJsonFile(
   filePath: string,
-  rootKey: 'mcpServers' | 'servers',
+  rootKey: 'mcpServers' | 'servers' | 'mcp',
   entry: Record<string, unknown>,
   dryRun: boolean
 ): void {
@@ -82,8 +86,9 @@ function copyDirRecursive(src: string, dest: string) {
 }
 
 /**
- * Universal Plugin & MCP Installer for mainstream AI Agent products:
- * Antigravity, Claude Code, Claude Desktop, Cursor, VS Code, Codex, and ChatGPT Apps.
+ * Universal Plugin & MCP Installer for all mainstream AI Agent products:
+ * Antigravity, DeepSeek Harness (dsh), Claude Code, Claude Desktop, Cursor,
+ * Windsurf, VS Code / Copilot, Cline / Roo Code, OpenCode, Codex CLI, and ChatGPT Apps.
  */
 export function installCodeSightPlugin(options: {
   target: AgentTarget;
@@ -100,7 +105,19 @@ export function installCodeSightPlugin(options: {
 
   const targets: Array<Exclude<AgentTarget, 'all'>> =
     options.target === 'all'
-      ? ['antigravity', 'claude-code', 'claude-desktop', 'cursor', 'vscode', 'codex', 'chatgpt']
+      ? [
+          'antigravity',
+          'deepseek-harness',
+          'claude-code',
+          'claude-desktop',
+          'cursor',
+          'windsurf',
+          'vscode',
+          'cline',
+          'opencode',
+          'codex',
+          'chatgpt',
+        ]
       : [options.target];
 
   const results: InstallPlanItem[] = [];
@@ -117,14 +134,7 @@ export function installCodeSightPlugin(options: {
         fs.writeFileSync(
           mcpConfigPath,
           JSON.stringify(
-            {
-              mcpServers: {
-                codesight: {
-                  command: mcp.command,
-                  args: mcp.args,
-                },
-              },
-            },
+            { mcpServers: { codesight: { command: mcp.command, args: mcp.args } } },
             null,
             2
           ) + '\n',
@@ -138,6 +148,47 @@ export function installCodeSightPlugin(options: {
         destination: pluginDest,
         action: 'copy-plugin',
         summary: 'Antigravity 原生插件（含 plugin.json + mcp_config.json + SKILL.md + rules/AGENTS.md）',
+      });
+    } else if (t === 'deepseek-harness') {
+      const dshPluginDir = path.join(engineRoot, 'packages/dsh-plugin');
+      const overlayPath = isGlobal
+        ? path.join(homeDir, '.dsh/codesight.cordis.yml')
+        : path.join(projectDir, '.codesight/dsh-mcp.cordis.yml');
+      const yamlContent = [
+        '# CodeSight MCP overlay for DeepSeek Harness (dsh)',
+        `- insert:`,
+        `    - id: codesight-mcp`,
+        `      name: '@deepseek-ai/dsh-mcp-client'`,
+        `      config:`,
+        `        serverName: codesight`,
+        `        transport: stdio`,
+        `        command: ${JSON.stringify(mcp.command)}`,
+        `        args: [${mcp.args.map((a) => JSON.stringify(a)).join(', ')}]`,
+        `        cwd: !!js process.cwd()`,
+        '',
+      ].join('\n');
+
+      if (!dryRun) {
+        fs.mkdirSync(path.dirname(overlayPath), { recursive: true });
+        fs.writeFileSync(overlayPath, yamlContent, 'utf8');
+      }
+
+      const snippet = [
+        '# 方式 A（推荐 · 原生 Cordis 插件包，含 Web UI 交互卡片插槽）:',
+        `dsh plugin --profile default add "${dshPluginDir}"`,
+        'dsh --profile default web',
+        '',
+        '# 方式 B（零安装 MCP Overlay）:',
+        `dsh web --patch "${overlayPath}"`,
+      ].join('\n');
+
+      results.push({
+        target: 'deepseek-harness',
+        scope: isGlobal ? 'global' : 'workspace',
+        destination: overlayPath,
+        action: 'write-yaml',
+        summary: 'DeepSeek Harness (dsh) 原生 Cordis 插件包 + MCP Overlay（支持内置交互卡）',
+        snippet,
       });
     } else if (t === 'claude-code') {
       const dest = isGlobal
@@ -176,6 +227,16 @@ export function installCodeSightPlugin(options: {
         action: 'write-json',
         summary: 'Cursor MCP Server 配置',
       });
+    } else if (t === 'windsurf') {
+      const dest = path.join(homeDir, '.codeium/windsurf/mcp_config.json');
+      mergeMcpJsonFile(dest, 'mcpServers', { command: mcp.command, args: mcp.args }, dryRun);
+      results.push({
+        target: 'windsurf',
+        scope: 'global',
+        destination: dest,
+        action: 'write-json',
+        summary: 'Windsurf Cascade MCP 配置（~/.codeium/windsurf/mcp_config.json）',
+      });
     } else if (t === 'vscode') {
       const dest = path.join(projectDir, '.vscode/mcp.json');
       mergeMcpJsonFile(dest, 'servers', { type: 'stdio', command: mcp.command, args: mcp.args }, dryRun);
@@ -185,6 +246,33 @@ export function installCodeSightPlugin(options: {
         destination: dest,
         action: 'write-json',
         summary: 'VS Code / GitHub Copilot MCP 配置',
+      });
+    } else if (t === 'cline') {
+      const dest = path.join(projectDir, '.roo/mcp.json');
+      mergeMcpJsonFile(dest, 'mcpServers', { command: mcp.command, args: mcp.args }, dryRun);
+      results.push({
+        target: 'cline',
+        scope: 'workspace',
+        destination: dest,
+        action: 'write-json',
+        summary: 'Cline / Roo Code MCP 配置（.roo/mcp.json，Cline 可直接复用同一 mcpServers 节点）',
+      });
+    } else if (t === 'opencode') {
+      const dest = isGlobal
+        ? path.join(homeDir, '.config/opencode/opencode.json')
+        : path.join(projectDir, 'opencode.json');
+      mergeMcpJsonFile(
+        dest,
+        'mcp',
+        { type: 'local', command: [mcp.command, ...mcp.args], enabled: true },
+        dryRun
+      );
+      results.push({
+        target: 'opencode',
+        scope: isGlobal ? 'global' : 'workspace',
+        destination: dest,
+        action: 'write-json',
+        summary: 'OpenCode 本地 MCP 配置（opencode.json）',
       });
     } else if (t === 'codex') {
       const tomlPath = path.join(homeDir, '.codex/config.toml');

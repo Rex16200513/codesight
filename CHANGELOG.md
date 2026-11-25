@@ -2,6 +2,13 @@
 
 All notable changes to **CodeSight** are documented in this file.
 
+## [1.0.4] - 2026-11-25
+
+### Added
+- **Native DeepSeek Harness (`dsh`) Cordis Plugin (`@codesight/dsh-plugin`)**: Official Cordis bundle (`dsh.bundle` + `cordis.patch.yml` + `dsh.client` Web UI `tool.call.toolview` keyed card slots + `ui/message` & `tools/call` direct session bridge), plus zero-install `--patch` MCP overlay (`codesight.mcp.cordis.yml`).
+- **Expanded Universal Agent Installer (11 Mainstream AI Agents)**: Added first-class `codesight install` targets for **DeepSeek Harness (`deepseek-harness` / `dsh`)**, **Windsurf**, **Cline / Roo Code**, and **OpenCode**, alongside Antigravity, Claude Code, Claude Desktop, Cursor, VS Code / Copilot, Codex CLI, and ChatGPT Apps.
+- **Refreshed v1.0.3+ Visual Assets**: Updated `assets/codesight-demo.gif` (1.40 MB) and 2x Retina screenshots to showcase typed UI wireframes, non-UI AST relation graphs, split tips, and live bilingual switching.
+
 ## [1.0.3] - 2026-11-24
 
 ### Added

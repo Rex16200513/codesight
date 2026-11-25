@@ -96,8 +96,8 @@ ${C.bold}CodeSight GraphRAG Engine CLI${C.reset} ${C.dim}— AST 函数调用图
   ${C.cyan}codesight config [show | set <key> <value> | reset]${C.reset}
       Manage unified settings (~/.codesight/config.json) shared by Agent plugins & macOS HUD
 
-  ${C.cyan}codesight install --target <antigravity|claude-code|claude-desktop|cursor|vscode|codex|chatgpt|all>${C.reset}
-      One-command plugin & MCP setup for mainstream AI agents (--global / --dry-run)
+  ${C.cyan}codesight install --target <antigravity|deepseek-harness|claude-code|claude-desktop|cursor|windsurf|vscode|cline|opencode|codex|chatgpt|all>${C.reset}
+      One-command plugin & MCP setup for 11 mainstream AI agents (--global / --dry-run)
 
 可选参数:
   --mcp-cmd "<命令>"  挂载外部开源 Graph-RAG MCP（如 "cgc mcp start" / code-graph-rag / Serena）
@@ -330,13 +330,18 @@ async function main() {
     return;
   }
   if (command === 'install') {
-    const rawTarget = (typeof flags.target === 'string' ? flags.target : positional[0]) || 'all';
+    const rawInput = (typeof flags.target === 'string' ? flags.target : positional[0]) || 'all';
+    const rawTarget = rawInput === 'dsh' ? 'deepseek-harness' : rawInput;
     const validTargets: AgentTarget[] = [
       'antigravity',
+      'deepseek-harness',
       'claude-code',
       'claude-desktop',
       'cursor',
+      'windsurf',
       'vscode',
+      'cline',
+      'opencode',
       'codex',
       'chatgpt',
       'all',

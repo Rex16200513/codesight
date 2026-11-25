@@ -1,9 +1,9 @@
 {
   "name": "codesight",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "license": "MIT",
-  "description": "CodeSight — Local-first GraphRAG code comprehension, visual architecture cards (MCP Apps), and native macOS HUD for AI coding.",
+  "description": "CodeSight — Local-first GraphRAG code comprehension, visual architecture cards (MCP Apps / DeepSeek Harness), and native macOS HUD for AI coding.",
   "repository": {
     "type": "git",
     "url": "https://github.com/Rex16200513/codesight.git"
@@ -17,6 +17,8 @@
     "vibe-coding",
     "mcp",
     "mcp-apps",
+    "dsh-plugin",
+    "deepseek-harness",
     "graphrag",
     "ast",
     "cursor",
@@ -37,9 +39,9 @@
     "dev": "npm run dev --workspace=@codesight/hud",
     "dev:sidecar": "npm run dev --workspace=@codesight/sidecar",
     "dev:all": "node scripts/dev-all.mjs",
-    "build": "npm run build --workspace=@codesight/core && npm run build --workspace=@codesight/mcp-server && npm run build --workspace=@codesight/cli && npm run build --workspace=@codesight/sidecar && npm run build --workspace=@codesight/hud",
-    "typecheck": "npm run typecheck --workspace=@codesight/core && npm run typecheck --workspace=@codesight/mcp-server && npm run typecheck --workspace=@codesight/cli && npm run typecheck --workspace=@codesight/ui && npm run typecheck --workspace=@codesight/sidecar && npm run typecheck --workspace=@codesight/hud",
-    "test": "npm run test --workspace=@codesight/core && npm run test --workspace=@codesight/mcp-server"
+    "build": "npm run build --workspace=@codesight/core && npm run build --workspace=@codesight/mcp-server && npm run build --workspace=@codesight/dsh-plugin && npm run build --workspace=@codesight/cli && npm run build --workspace=@codesight/sidecar && npm run build --workspace=@codesight/hud",
+    "typecheck": "npm run typecheck --workspace=@codesight/core && npm run typecheck --workspace=@codesight/mcp-server && npm run typecheck --workspace=@codesight/dsh-plugin && npm run typecheck --workspace=@codesight/cli && npm run typecheck --workspace=@codesight/ui && npm run typecheck --workspace=@codesight/sidecar && npm run typecheck --workspace=@codesight/hud",
+    "test": "npm run test --workspace=@codesight/core && npm run test --workspace=@codesight/mcp-server && npm run test --workspace=@codesight/dsh-plugin"
   },
   "engines": {
     "node": ">=18.0.0"

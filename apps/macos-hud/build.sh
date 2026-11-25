@@ -55,9 +55,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundleVersion</key>
-  <string>1.0.3</string>
+  <string>1.0.4</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0.3</string>
+  <string>1.0.4</string>
   <key>CFBundleExecutable</key>
   <string>CodeSight</string>
   <key>CFBundlePackageType</key>

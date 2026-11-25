@@ -129,16 +129,20 @@ CodeSight 不是把代码随便切块丢进向量库，而是在本地对代码�
 
 ---
 
-## 全生态适配矩阵
+## 全生态适配矩阵（覆盖 11 款主流 AI Agent + 原生 macOS HUD）
 
-| 客户端 / 环境 | 协议通道 | 交互视图 | 一键安装命令 |
+| 客户端 / 环境 | 插件接入方式 | 交互视图 | 一键安装命令 |
 | --- | --- | --- | --- |
+| **DeepSeek Harness (`dsh`)** | 原生 Cordis 插件包（`@codesight/dsh-plugin`）+ MCP Overlay | Web UI 原生插槽卡片 | `dsh plugin add ./packages/dsh-plugin` 或 `... install --target dsh` |
 | **Antigravity** | 原生插件 + MCP Apps (`stdio`) | 对话内嵌交互卡 | `node packages/cli/dist/cli.js install --target antigravity` |
-| **Cursor** | MCP (`stdio`) | 浏览器交互全图 + 文本 | `node packages/cli/dist/cli.js install --target cursor` |
-| **Claude Code** | MCP (`stdio`) | 浏览器交互全图 + 文本 | `node packages/cli/dist/cli.js install --target claude-code` |
+| **Claude Code** | MCP (`stdio`) | 对话 / 交互全图 | `node packages/cli/dist/cli.js install --target claude-code` |
 | **Claude Desktop** | MCP Apps (`stdio`) | 对话内嵌交互卡 | `node packages/cli/dist/cli.js install --target claude-desktop` |
-| **VS Code / Copilot** | MCP (`stdio`) | 浏览器全图 + macOS HUD | `node packages/cli/dist/cli.js install --target vscode` |
-| **OpenAI Codex CLI** | MCP (`stdio`) | 浏览器全图 + 文本 | `node packages/cli/dist/cli.js install --target codex` |
+| **Cursor** | MCP (`stdio`) | 交互全图 + 文本 | `node packages/cli/dist/cli.js install --target cursor` |
+| **Windsurf** | MCP (`stdio`) | 交互全图 + 文本 | `node packages/cli/dist/cli.js install --target windsurf` |
+| **VS Code / Copilot** | MCP (`stdio`) | 交互全图 + macOS HUD | `node packages/cli/dist/cli.js install --target vscode` |
+| **Cline / Roo Code** | MCP (`stdio`) | 交互全图 + 文本 | `node packages/cli/dist/cli.js install --target cline` |
+| **OpenCode** | 本地 MCP (`opencode.json`) | 交互全图 + 文本 | `node packages/cli/dist/cli.js install --target opencode` |
+| **OpenAI Codex CLI** | MCP (`stdio`) | 交互全图 + 文本 | `node packages/cli/dist/cli.js install --target codex` |
 | **ChatGPT Apps / 远程** | Streamable HTTP (`/mcp`) | 对话内嵌 MCP Apps | `npm run mcp:http` |
 | **macOS 悬浮 HUD** | 本地 Sidecar (`127.0.0.1:4317`) | 原生 SwiftUI 置顶浮窗 | `npm run hud:open` |
 
